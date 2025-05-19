@@ -12,8 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from slide_analyzer import analyze_pdf as conceptmap_analyze_pdf
 
+from app.upload import router as upload_router
+
 app = FastAPI()
 
+app.include_router(upload_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 또는 ["http://localhost:3000"] 등 프론트엔드 주소만 허용 가능

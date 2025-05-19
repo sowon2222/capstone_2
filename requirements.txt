@@ -1,3 +1,16 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+torch==2.0.1
+transformers==4.34.0
+peft==0.3.0
+kiwipiepy==0.11.0
+keybert==0.7.0
+textwrap3==0.9.2
+python-multipart==0.0.6
+pymupdf==1.22.5
+numpy==1.26.4
+Pillow==10.0.0
+easyocr==1.7.0
 fastapi==0.104.1
 uvicorn==0.24.0
 python-multipart==0.0.6
