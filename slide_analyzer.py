@@ -11,6 +11,10 @@ from konlpy.tag import Okt
 import os
 import tempfile
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# .env 파일을 자동으로 읽어서 환경변수로 등록
+load_dotenv()
 
 app = FastAPI()
 app.add_middleware(
@@ -21,6 +25,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 openai.api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+print("OPENAI_API_KEY:", os.environ.get("OPENAI_API_KEY"))
 
 def load_stopwords(filepath="stopwords-ko.txt"):
     with open(filepath, encoding="utf-8") as f:
@@ -336,6 +343,9 @@ async def analyze_pdf(file: UploadFile = File(...)):
             }
             
         except Exception as e:
+            import traceback
+            print("PDF 분석 중 오류 발생:", e)
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"PDF 분석 중 오류 발생: {str(e)}")
         finally:
             # 임시 파일 삭제

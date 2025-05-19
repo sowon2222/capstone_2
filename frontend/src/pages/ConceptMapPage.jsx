@@ -107,7 +107,7 @@ export default function ConceptMapPage() {
               개념 맵
             </button>
           </div>
-          <div className="flex-1 min-h-0 flex flex-row gap-8 px-10 py-8" style={{height: "531px"}}>
+          <div className="flex-1 min-h-0 flex flex-row gap-8 px-10 py-8">
             {loading ? (
               <>
                 <div className="flex-1 bg-[#23232a] rounded-lg p-2 flex flex-col justify-center items-center min-h-0">
@@ -116,7 +116,7 @@ export default function ConceptMapPage() {
                     <span className="ml-4 text-white text-lg">분석 중...</span>
                   </div>
                 </div>
-                <div className="w-[300px] bg-[#23232a] rounded-lg p-4 flex flex-col min-h-0" style={{height: "531px", overflowY: "auto"}}></div>
+                <div className="w-[300px] bg-[#23232a] rounded-lg p-4 flex flex-col min-h-0"></div>
               </>
             ) : (
               <>
@@ -125,7 +125,7 @@ export default function ConceptMapPage() {
                   <NetworkGraph nodes={nodes} edges={edges} />
                 </div>
                 {/* 오른쪽 - 개념어 빈도표 */}
-                <div className="w-[300px] bg-[#23232a] rounded-lg p-4 flex flex-col min-h-0" style={{height: "531px", overflowY: "auto"}}>
+                <div className="w-[300px] bg-[#23232a] rounded-lg p-4 flex flex-col overflow-y-auto min-h-0">
                   <h3 className="text-white mb-4">개념어 빈도표</h3>
                   <FreqTable freqTable={freqTable} />
                 </div>
@@ -136,4 +136,4 @@ export default function ConceptMapPage() {
       </div>
     </div>
   );
-} 
+}

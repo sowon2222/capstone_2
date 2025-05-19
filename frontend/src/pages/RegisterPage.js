@@ -35,13 +35,12 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const userData = await authService.register({
+      const userData = {
         username: formData.id,      // 아이디
         password: formData.password, // 비밀번호
-        name: formData.name,         // 이름
         email: formData.email        // 이메일
-            });
-      
+      };
+      await authService.register(userData);
       await login(userData);
       navigate("/");
     } catch (error) {

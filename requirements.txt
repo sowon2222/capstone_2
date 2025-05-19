@@ -7,10 +7,6 @@ networkx==3.1
 matplotlib==3.7.1
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
+cryptography==41.0.0
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
---only-binary :all:
---trusted-host pypi.org
---trusted-host files.pythonhosted.org
---prefer-binary
---no-build-isolation 
+passlib[bcrypt]==1.7.4 

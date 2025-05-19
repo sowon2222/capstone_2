@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import NetworkGraph from "./NetworkGraph";
-import FreqTable from "./FreqTable";
+import NetworkGraph from './components/concept/NetworkGraph';
+import FreqTable from './components/concept/FreqTable';
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import HomePage from "./pages/HomePage";
@@ -12,6 +12,7 @@ import RegisterPage from "./pages/RegisterPage";
 import SlideSummary from "./pages/SlideSummary";
 import ConceptMapPage from "./pages/ConceptMapPage";
 import { AuthProvider } from "./contexts/AuthContext";
+import { AnalysisProvider } from "./contexts/AnalysisContext";
 
 function App() {
   const [nodes, setNodes] = useState([]);
@@ -64,20 +65,22 @@ function App() {
 
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/slide-summary" element={<SlideSummary />} />
-            <Route path="/problems" element={<ProblemPage />} />
-            <Route path="/concept-map" element={<ConceptMapPage />} />
-            <Route path="/archive" element={<ArchivePage />} />
-            <Route path="/community" element={<CommunityPage />} />
-          </Route>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-        </Routes>
-      </BrowserRouter>
+      <AnalysisProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/slide-summary" element={<SlideSummary />} />
+              <Route path="/problems" element={<ProblemPage />} />
+              <Route path="/concept-map" element={<ConceptMapPage />} />
+              <Route path="/archive" element={<ArchivePage />} />
+              <Route path="/community" element={<CommunityPage />} />
+            </Route>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+          </Routes>
+        </BrowserRouter>
+      </AnalysisProvider>
     </AuthProvider>
   );
 }

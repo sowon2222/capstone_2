@@ -70,8 +70,8 @@ function NetworkGraph({ nodes, edges }) {
       }))
     };
     const options = {
-      height: "531px",
-      width: "790px",
+      height: "100%",
+      width: "100%",
       nodes: {
         font: { size: 16 }
       },
@@ -105,21 +105,6 @@ function NetworkGraph({ nodes, edges }) {
     networkRef.current = new Network(container.current, data, options);
     setTimeout(() => {
       networkRef.current.fit({ animation: true });
-      // HiDPI(고해상도) 대응: 캔버스 픽셀 수 조정
-      const canvas = container.current.querySelector("canvas");
-      if (canvas) {
-        const ratio = window.devicePixelRatio || 1;
-        canvas.style.width = "790px";
-        canvas.style.height = "531px";
-        canvas.width = 790 * ratio;
-        canvas.height = 531 * ratio;
-        const ctx = canvas.getContext("2d");
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        if (networkRef.current) {
-          networkRef.current.setSize("790px", "531px");
-          networkRef.current.redraw();
-        }
-      }
     }, 300);
 
     // 노드 툴팁
@@ -177,8 +162,8 @@ function NetworkGraph({ nodes, edges }) {
       <div
         ref={container}
         style={{
-          width: "790px",
-          height: "531px",
+          width: "100%",
+          height: "100%",
           background: "#fff",
           borderRadius: 12,
         }}
