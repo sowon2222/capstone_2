@@ -1,14 +1,17 @@
 import os
 import torch
+import os
+import torch
 import torch.nn as nn
 from PIL import Image
 from transformers import (
-    MT5Tokenizer,
     MT5ForConditionalGeneration,
+    MT5Tokenizer,
     ViTModel,
     ViTImageProcessor,
 )
 from peft import PeftModel
+from kiwipiepy import Kiwi
 from keybert import KeyBERT
 import textwrap
 
@@ -18,15 +21,28 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ───────────────────────────────────────────────────────────
 # 1️⃣ 키워드 추출 함수
 # ───────────────────────────────────────────────────────────
-def extract_noun_chunk_keywords(text, top_n=7):
+
+def extract_noun_keywords(text, top_n=7):
+    kiwi = Kiwi()
+    tokens = kiwi.tokenize(text)
+    noun_tags = {"NNG", "NNP", "NNB", "NP", "NR"}  # 일반명사, 고유명사, 의존명사, 대명사, 수사 등 명사 관련 태그
+
+    # 명사 단어들만 추출
+    nouns = [tok.form for tok in tokens if tok.tag in noun_tags]
+
+    # 명사만 연결해서 KeyBERT에 입력
+    noun_text = " ".join(nouns)
+
+    # KeyBERT 모델 호출
     kw_model = KeyBERT()
     keywords = kw_model.extract_keywords(
-        text,
-        keyphrase_ngram_range=(1,2),
+        noun_text,
+        keyphrase_ngram_range=(1, 1),
         stop_words=None,
-        top_n=top_n
+        top_n=top_n,
+        diversity=0.7, 
     )
-    return [kw for kw, _ in keywords]
+    return [kw for kw, score in keywords]
 
 # ───────────────────────────────────────────────────────────
 # 2️⃣ Fusion Layer 정의
@@ -112,20 +128,22 @@ mm_model      = MultiModalMT5ForInference(
 # ───────────────────────────────────────────────────────────
 # 5️⃣ 요약 함수
 # ───────────────────────────────────────────────────────────
-def summarize_slide(image: Image.Image, text: str) -> str:
-    """
-    - image: PIL.Image 객체
-    - text : OCR로 추출된 텍스트
-    """
-    kws = extract_noun_chunk_keywords(text)
-    first_kw = kws[0] if kws else ""
-    prompt = textwrap.dedent(f"""
-        요약: '{first_kw}'로 시작하여, 강의자료의 핵심 내용을 간결하게 정리합니다.
-        내용: {text}
-        키워드: {', '.join(kws)}
-    """).strip()
+def summarize_slide(image: Image.Image, txt: str) -> str:
+    # 1) 키워드 추출
+    kws = extract_noun_keywords(txt, top_n=5)
+    start_text = kws[0] if kws else ""
 
-    # 1) 텍스트 토큰화
+    # 2) 명령형 prefix 프롬프트 수정
+    prompt = textwrap.dedent(f"""\  
+            출력: 강의 내용에 대한 요약문을 키워드를 반드시 포함하여 간략하게 작성하세요.
+            키워드: {', '.join(kws)}  
+            강의 내용: {txt}
+
+            출력:  
+            1. 요약문:  
+            """).strip()
+
+    # 3) 토큰화
     enc = tokenizer(
         prompt,
         return_tensors="pt",
@@ -134,19 +152,25 @@ def summarize_slide(image: Image.Image, text: str) -> str:
         max_length=512
     ).to(device)
 
+
     # 2) 이미지 임베딩
     pix = vit_processor(images=image, return_tensors="pt").pixel_values.to(device)
 
-    # 3) 생성
+    # 4) 시작 문장 토크나이징 (디코더 시작 토큰 강제)
+    start_tokens = tokenizer(start_text, add_special_tokens=False, return_tensors="pt").input_ids.to(device)
+    # add_special_tokens=False로 토큰만 얻음 (ex: '네트워크' -> [1234])
+
+    # 6) generate 호출
     out_ids = mm_model.generate(
         input_ids=enc.input_ids,
         attention_mask=enc.attention_mask,
         pixel_values=pix,
-        max_new_tokens=150,
-        num_beams=4,
+        decoder_input_ids=start_tokens,
+        max_new_tokens=200,
+        num_beams=6,
         no_repeat_ngram_size=2,
-        early_stopping=True,
         repetition_penalty=1.2,
+        length_penalty=1.1,  # 길이에 약간 보상을 줘서 긴 문장 생성 유도
+        early_stopping=True,
     )
-
     return tokenizer.decode(out_ids[0], skip_special_tokens=True).strip()

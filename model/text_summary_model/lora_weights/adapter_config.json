@@ -24,9 +24,9 @@
   "rank_pattern": {},
   "revision": null,
   "target_modules": [
+    "ff_proj",
     "q",
-    "v",
-    "ff_proj"
+    "v"
   ],
   "task_type": "SEQ_2_SEQ_LM",
   "trainable_token_indices": null,
