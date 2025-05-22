@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>강의자료 슬라이드 요약</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .tab-btn { 
+            padding: 10px 20px; 
+            margin: 0 5px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            background: #1976d2; 
+            color: white; 
+        }
+        .tab-btn.active { background: #4CAF50; }
+        .tab-content { display: none; padding: 20px; border: 1px solid #ddd; border-radius: 5px; margin-top: 20px; }
+        .tab-content.active { display: block; }
+        .material-item { 
+            padding: 10px; 
+            margin: 5px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+        .material-item:hover { background: #f5f5f5; }
+        .slide-viewer { 
+            border: 1px solid #4CAF50; 
+            padding: 20px; 
+            border-radius: 8px; 
+            background: #f8fff8; 
+            margin-top: 20px; 
+        }
+        .slide-nav { 
+            margin-top: 20px; 
+            text-align: center; 
+        }
+        .slide-nav button { 
+            padding: 8px 16px; 
+            margin: 0 5px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            background: #4CAF50; 
+            color: white; 
+        }
+        .slide-nav button:disabled { 
+            background: #cccccc; 
+            cursor: not-allowed; 
+        }
+        #uploadForm { 
+            margin-bottom: 20px; 
+            padding: 20px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+        }
+        #uploadForm input { 
+            margin: 5px 0; 
+            padding: 8px; 
+            width: 100%; 
+        }
+        #uploadForm button { 
+            padding: 10px 20px; 
+            background: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+        }
+    </style>
+</head>
+<body>
+    <h1>강의자료 슬라이드 요약</h1>
+    <div>
+        <button class="tab-btn active" id="tab-study-btn" onclick="showTab('study')">공부하기</button>
+        <button class="tab-btn" id="tab-archive-btn" onclick="showTab('archive')">아카이브</button>
+    </div>
+
+    <!-- 공부하기 탭 -->
+    <div id="tab-study" class="tab-content active">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" name="pdf" accept="application/pdf" required>
+            <input type="text" name="material_name" placeholder="강의자료 이름" required>
+            <button type="submit">업로드 및 시작하기</button>
+        </form>
+        <div id="study-slide-viewer" style="display:none;">
+            <div>
+                <span id="slide-info"></span>
+                <span id="progress-info"></span>
+                <button id="study-prev-slide">이전</button>
+                <button id="study-next-slide">다음</button>
+                <button id="study-close-slide">닫기</button>
+            </div>
+            <div id="slide-summary"></div>
+        </div>
+    </div>
+
+    <!-- 아카이브 탭 -->
+    <div id="tab-archive" class="tab-content">
+        <h2>내 업로드 강의자료</h2>
+        <ul id="material-list"></ul>
+        <div id="archive-slide-viewer" style="display:none;">
+            <div id="archive-slide-content">
+                <div>
+                    <span id="slide-info">1 / 3</span>
+                    <span id="progress-info">진도율: 0%</span>
+                    <button id="prev-btn">이전</button>
+                    <button id="next-btn">다음</button>
+                </div>
+                <div id="slide-summary"></div>
+            </div>
+            <div class="slide-nav">
+                <button id="archive-prev-slide" disabled>이전</button>
+                <span id="archive-slide-count"></span>
+                <button id="archive-next-slide">다음</button>
+                <button id="archive-close-slide">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="intensity-graph" style="margin:30px 0;"></div>
+
+    <script>
+        let authToken = localStorage.getItem('authToken') || '';
+        let currentStudySlide = 1;
+        let currentArchiveSlide = 1;
+        let studyMaterialId = null;
+        let archiveMaterialId = null;
+        let totalSlides = 0;
+        let progress = 0;
+        let studyStartTime = null;
+
+        // 탭 전환
+        function showTab(tab) {
+            document.getElementById('tab-study').classList.remove('active');
+            document.getElementById('tab-archive').classList.remove('active');
+            document.getElementById('tab-study-btn').classList.remove('active');
+            document.getElementById('tab-archive-btn').classList.remove('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+            document.getElementById('tab-' + tab + '-btn').classList.add('active');
+            if(tab === 'archive') loadMaterialList();
+        }
+
+        // 업로드/요약 폼
+        document.getElementById('uploadForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            try {
+                const res = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                if (data.material_id) {
+                    studyMaterialId = data.material_id;
+                    totalSlides = data.total_pages || 0;
+                    currentStudySlide = 1;
+                    document.getElementById('study-slide-viewer').style.display = 'block';
+                    loadStudySlide();
+                }
+            } catch (e) {
+                alert('업로드 실패: ' + e.message);
+            }
+        };
+
+        // 공부하기 탭: 슬라이드 로드
+        async function loadStudySlide() {
+            await endSlideStudyAndSaveTime();
+            const summaryDiv = document.getElementById('slide-summary');
+            summaryDiv.innerHTML = '불러오는 중...';
+            try {
+                const res = await fetch(`/archive/${studyMaterialId}/slide/${currentStudySlide}/summary`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                const slide = data.slide;
+                let extra = '';
+                // 마지막 슬라이드에서만 전체 요약 버튼 표시
+                if (currentStudySlide === totalSlides) {
+                    extra = `<button id="show-overall-summary" style="margin-top:10px;">전체 요약 보기</button>
+                    <div id="overall-summary-result" style="margin-top:10px;"></div>`;
+                }
+                summaryDiv.innerHTML = `
+                    <div class="slide-viewer">
+                        <h3>슬라이드 ${slide.slide_number}</h3>
+                        <b>슬라이드 제목:</b> <span style="color:#1976d2;">${slide.slide_title || '-'}</span><br>
+                        <b>개념 설명:</b> <span>${slide.concept_explanation || '-'}</span><br>
+                        <b>주요 키워드:</b> <span style="color:#388e3c;">${slide.main_keywords || '-'}</span><br>
+                        <b>중요한 문장:</b>
+                        <pre style="background:#f4f4f4;padding:10px;border-radius:4px;">${(slide.important_sentences || '-').replace(/^- /gm, '').replace(/\n/g, '\n')}</pre>
+                        <b>슬라이드 전체 요약:</b>
+                        <pre style="background:#e8f5e9;padding:10px;border-radius:4px;">${slide.summary || '-'}</pre>
+                        ${extra}
+                    </div>
+                `;
+                document.getElementById('slide-info').textContent = `${currentStudySlide} / ${totalSlides}`;
+                progress = (currentStudySlide / totalSlides) * 100;
+                document.getElementById('progress-info').textContent = `진도율: ${progress.toFixed(1)}%`;
+                document.getElementById('study-prev-slide').disabled = currentStudySlide <= 1;
+                document.getElementById('study-next-slide').disabled = currentStudySlide >= totalSlides;
+
+                // 전체 요약 버튼 이벤트
+                if (currentStudySlide === totalSlides) {
+                    document.getElementById('show-overall-summary').onclick = async function() {
+                        const btn = this;
+                        btn.disabled = true;
+                        btn.textContent = '요약 중...';
+                        const resultDiv = document.getElementById('overall-summary-result');
+                        try {
+                            const res = await fetch(`/archive/${studyMaterialId}/summary`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${authToken}` }
+                            });
+                            const data = await res.json();
+                            if (data.summary) {
+                                resultDiv.innerHTML = `<b>전체 요약:</b><pre style='background:#fffde7;padding:10px;border-radius:4px;'>${data.summary}</pre>`;
+                            } else {
+                                resultDiv.innerHTML = '전체 요약 결과가 없습니다.';
+                            }
+                        } catch (e) {
+                            resultDiv.innerHTML = '전체 요약 오류: ' + e.message;
+                        }
+                        btn.disabled = false;
+                        btn.textContent = '전체 요약 보기';
+                    };
+                }
+            } catch (e) {
+                summaryDiv.innerHTML = '오류: ' + e.message;
+            }
+            updateProgress().then(() => {
+                fetchAndRenderIntensityGraph();
+            });
+            startSlideStudy();
+        }
+
+        // 아카이브 탭: 자료 리스트 불러오기
+        async function loadMaterialList() {
+            const ul = document.getElementById('material-list');
+            ul.innerHTML = '불러오는 중...';
+            try {
+                const res = await fetch('/archive/list', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                ul.innerHTML = '';
+                (data.materials || []).forEach(mat => {
+                    const percent = Math.round(mat.progress || 0);
+                    const li = document.createElement('li');
+                    li.className = 'material-item';
+                    li.innerHTML = `
+                        <span>${mat.title} (${percent}% / ${mat.page}슬라이드)</span>
+                        ${percent < 100
+                            ? `<button onclick="continueStudy(${mat.material_id}, ${mat.page}, ${percent})">이어 학습하기</button>`
+                            : `<span style="color:green;font-weight:bold;">학습 완료</span>`
+                        }
+                    `;
+                    ul.appendChild(li);
+                });
+            } catch (e) {
+                ul.innerHTML = '<li>오류: ' + e.message + '</li>';
+            }
+        }
+
+        // 아카이브 탭: 슬라이드 보기 시작
+        async function startArchive(materialId, total) {
+            archiveMaterialId = materialId;
+            currentArchiveSlide = 1;
+            totalSlides = total;
+            document.getElementById('archive-slide-viewer').style.display = 'block';
+            loadArchiveSlide();
+        }
+
+        // 아카이브 탭: 슬라이드 로드
+        async function loadArchiveSlide() {
+            const div = document.getElementById('archive-slide-content');
+            div.innerHTML = '불러오는 중...';
+            try {
+                const res = await fetch(`/archive/${archiveMaterialId}/slide/${currentArchiveSlide}/summary`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                const slide = data.slide;
+                div.innerHTML = `
+                    <div class="slide-viewer">
+                        <h3>슬라이드 ${slide.slide_number}</h3>
+                        <b>OCR 원본:</b>
+                        <pre style="background:#f4f4f4;padding:10px;border-radius:4px;">${slide.original_text}</pre>
+                        <b>GPT 요약:</b>
+                        <pre style="background:#e8f5e9;padding:10px;border-radius:4px;">${slide.summary}</pre>
+                    </div>
+                `;
+                document.getElementById('slide-info').textContent = `${currentArchiveSlide} / ${totalSlides}`;
+                progress = (currentArchiveSlide / totalSlides) * 100;
+                document.getElementById('progress-info').textContent = `진도율: ${progress.toFixed(1)}%`;
+                document.getElementById('archive-prev-slide').disabled = currentArchiveSlide <= 1;
+                document.getElementById('archive-next-slide').disabled = currentArchiveSlide >= totalSlides;
+            } catch (e) {
+                div.innerHTML = '오류: ' + e.message;
+            }
+            updateProgress().then(() => {
+                fetchAndRenderIntensityGraph();
+            });
+        }
+
+        // 버튼 이벤트 핸들러
+        document.getElementById('study-prev-slide').onclick = function() {
+            if (currentStudySlide > 1) {
+                currentStudySlide--;
+                loadStudySlide();
+            }
+        };
+        document.getElementById('study-next-slide').onclick = function() {
+            if (currentStudySlide < totalSlides) {
+                currentStudySlide++;
+                loadStudySlide();
+            }
+        };
+        document.getElementById('archive-prev-slide').onclick = function() {
+            if (currentArchiveSlide > 1) {
+                currentArchiveSlide--;
+                loadArchiveSlide();
+            }
+        };
+        document.getElementById('archive-next-slide').onclick = function() {
+            if (currentArchiveSlide < totalSlides) {
+                currentArchiveSlide++;
+                loadArchiveSlide();
+            }
+        };
+        document.getElementById('study-close-slide').onclick = async function() {
+            await endSlideStudyAndSaveTime();
+            document.getElementById('study-slide-viewer').style.display = 'none';
+            currentStudySlide = 1;
+            studyStartTime = null;
+            studyMaterialId = null;
+            totalSlides = 0;
+            progress = 0;
+            await fetchAndRenderIntensityGraph();
+        };
+        document.getElementById('archive-close-slide').onclick = async function() {
+            await endSlideStudyAndSaveTime();
+            document.getElementById('archive-slide-viewer').style.display = 'none';
+            currentArchiveSlide = 1;
+            studyStartTime = null;
+            archiveMaterialId = null;
+            totalSlides = 0;
+            progress = 0;
+            await fetchAndRenderIntensityGraph();
+        };
+
+        // 페이지 진입 시 공부하기 탭 활성화
+        window.onload = function() {
+            showTab('study');
+            loadMonthlyIntensity();
+        };
+
+        async function loadMonthlyIntensity() {
+            try {
+                const res = await fetch('/api/study-intensity/month', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await res.json();
+                drawIntensityGraph(data.data || []);
+            } catch (error) {
+                console.error('Error loading monthly intensity:', error);
+            }
+        }
+
+        // 간단한 잔디(heatmap) 그리기 예시
+        function drawIntensityGraph(records) {
+            const container = document.getElementById('intensity-graph');
+            container.innerHTML = '<h3>🌱 나의 학습 그래프 (점수)</h3>';
+            
+            // 날짜별 intensity_score를 맵으로 변환
+            const map = {};
+            records.forEach(r => {
+                // 날짜가 '2025-05-22T00:00:00.000Z' 형태면 앞 10글자만 사용
+                const key = r.study_date.length > 10 ? r.study_date.slice(0, 10) : r.study_date;
+                map[key] = r.intensity_score;
+            });
+
+            // 이번 달 날짜 구하기
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            let html = '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const score = map[dateStr] || 0;
+                const color = score > 0 ? `rgba(76, 175, 80, ${Math.min(score/10, 1)})` : '#f5f5f5';
+                
+                html += `
+                    <div style="
+                        width:40px;
+                        height:40px;
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+                        border:1px solid #ccc;
+                        border-radius:5px;
+                        background-color:${color};
+                        font-size:12px;
+                        color:${score > 0 ? 'white' : '#666'};
+                    ">
+                        <div>
+                            <div style="font-weight:bold;">${score.toFixed(1)}</div>
+                            <div style="font-size:10px;">${d}일</div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            container.innerHTML += html;
+        }
+
+        function continueStudy(materialId, totalPages, progress) {
+            archiveMaterialId = materialId;
+            totalSlides = totalPages;
+            // 이어서 볼 슬라이드 번호 계산 (진도율이 33%면 2번째 슬라이드부터)
+            let nextSlide = Math.floor((progress / 100) * totalPages) + 1;
+            if (nextSlide > totalPages) nextSlide = totalPages;
+            if (progress >= 100) nextSlide = totalPages;
+            currentArchiveSlide = nextSlide;
+            document.getElementById('archive-slide-viewer').style.display = 'block';
+            loadArchiveSlide();
+        }
+
+        function updateProgress() {
+            return new Promise((resolve, reject) => {
+                // 여기에 진도율 업데이트 로직을 구현하고, 완료되면 resolve 호출
+                resolve();
+            });
+        }
+
+        function fetchAndRenderIntensityGraph() {
+            fetch('/api/study-intensity/month', {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                drawIntensityGraph(data.data || []);
+            })
+            .catch(error => {
+                console.error('Error fetching intensity graph:', error);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAndRenderIntensityGraph();
+        });
+
+        function startSlideStudy() {
+            studyStartTime = Date.now();
+        }
+
+        async function endSlideStudyAndSaveTime() {
+            if (studyStartTime) {
+                const duration = Math.floor((Date.now() - studyStartTime) / 1000); // 초 단위
+                try {
+                    // 1. 학습 시간 저장
+                    await fetch('/api/study-time', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify({ duration })
+                    });
+
+                    // 2. 바로 intensity 점수 계산 요청
+                    await fetch('/api/study-intensity/today', {
+                        headers: {
+                            'Authorization': `Bearer ${authToken}`
+                        }
+                    });
+
+                    // 3. 그래프 업데이트
+                    await fetchAndRenderIntensityGraph();
+                } catch (error) {
+                    console.error('Error saving study time:', error);
+                }
+                studyStartTime = null;
+            }
+        }
+    </script>
+</body>
+</html>
