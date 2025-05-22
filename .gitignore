@@ -29,3 +29,4 @@ W
 *.rar
 *.7z
 
+echo "backend/" >> .gitignore
