@@ -1,0 +1,116 @@
+-- 최신 DB 테이블 구조 (2024-06 기준)
+
+-- 1. 사용자 테이블
+CREATE TABLE users (
+   user_id    INT AUTO_INCREMENT PRIMARY KEY, -- 사용자 ID
+   username   VARCHAR(255) NOT NULL UNIQUE,   -- 사용자명(고유)
+   password   VARCHAR(255) NOT NULL           -- 비밀번호 해시
+);
+
+-- 2. 문제 테이블
+CREATE TABLE questions (
+   question_id    INT AUTO_INCREMENT PRIMARY KEY, -- 문제 ID
+   slide_id       INT NOT NULL,                   -- 소속 슬라이드 ID
+   keyword_id     INT,                            -- 주요 키워드 ID (NULL 허용)
+   question_type  ENUM('객관식','주관식','참거짓','빈칸채우기') NOT NULL, -- 문제 유형
+   content        TEXT NOT NULL,                  -- 문제 내용
+   answer         TEXT NOT NULL,                  -- 정답
+   explanation    TEXT,                           -- 해설 (NULL 허용)
+   difficulty     VARCHAR(10) NOT NULL DEFAULT '중', -- 난이도(상/중/하)
+   FOREIGN KEY (slide_id) REFERENCES slides(slide_id),
+   FOREIGN KEY (keyword_id) REFERENCES keywords(keyword_id)
+);
+
+-- 3. 오답/약점 기록 테이블
+CREATE TABLE weak_keyword_logs (
+   log_id       INT AUTO_INCREMENT PRIMARY KEY, -- 오답 로그 ID
+   user_id      INT NOT NULL,                   -- 사용자 ID
+   question_id  INT NOT NULL,                   -- 문제 ID
+   keyword_id   INT NOT NULL,                   -- 키워드 ID
+   is_incorrect BOOLEAN NOT NULL,               -- 오답 여부
+   occurred_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 기록 시각
+   FOREIGN KEY (user_id) REFERENCES users(user_id),
+   FOREIGN KEY (question_id) REFERENCES questions(question_id),
+   FOREIGN KEY (keyword_id) REFERENCES keywords(keyword_id)
+);
+
+-- 4. 키워드 테이블
+CREATE TABLE keywords (
+   keyword_id    INT AUTO_INCREMENT PRIMARY KEY, -- 키워드 ID
+   keyword_name  VARCHAR(255) NOT NULL UNIQUE    -- 키워드명(고유)
+);
+
+-- 5. 슬라이드 테이블
+CREATE TABLE slides (
+   slide_id      INT AUTO_INCREMENT PRIMARY KEY, -- 슬라이드 ID
+   material_id   INT NOT NULL,                   -- 강의자료 ID
+   slide_number  INT NOT NULL,                   -- 슬라이드 번호
+   summary       TEXT NOT NULL,                  -- 슬라이드 요약
+   FOREIGN KEY (material_id) REFERENCES lecture_materials(material_id)
+);
+
+-- 6. 강의자료 테이블
+CREATE TABLE lecture_materials (
+   material_id    INT AUTO_INCREMENT PRIMARY KEY, -- 강의자료 ID
+   user_id        INT NOT NULL,                   -- 사용자 ID
+   material_name  VARCHAR(255) NOT NULL UNIQUE,   -- 강의자료명(고유)
+   progress       FLOAT NOT NULL DEFAULT 0,       -- 진도율
+   page           INT                             -- 현재 페이지
+);
+
+-- 7. 문제 풀이 기록 테이블
+CREATE TABLE question_attempts (
+   attempt_id   INT AUTO_INCREMENT PRIMARY KEY, -- 풀이 기록 ID
+   user_id      INT NOT NULL,                   -- 사용자 ID
+   question_id  INT NOT NULL,                   -- 문제 ID
+   is_correct   BOOLEAN NOT NULL,               -- 정답 여부
+   answer       TEXT,                           -- 사용자의 답변 (NULL 허용)
+   FOREIGN KEY (user_id) REFERENCES users(user_id),
+   FOREIGN KEY (question_id) REFERENCES questions(question_id)
+);
+
+-- 8. 문제-키워드 매핑 테이블
+CREATE TABLE question_keywords (
+   question_id  INT NOT NULL,                   -- 문제 ID
+   keyword_id   INT NOT NULL,                   -- 키워드 ID
+   PRIMARY KEY (question_id, keyword_id),
+   FOREIGN KEY (question_id) REFERENCES questions(question_id),
+   FOREIGN KEY (keyword_id) REFERENCES keywords(keyword_id)
+);
+
+-- 9. 진도 기록 테이블
+CREATE TABLE progress (
+   progress_id  INT AUTO_INCREMENT PRIMARY KEY, -- 진도 ID
+   user_id      INT NOT NULL,                   -- 사용자 ID
+   material_id  INT NOT NULL,                   -- 강의자료 ID
+   slide_id     INT NOT NULL,                   -- 슬라이드 ID
+   date         TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- 기록 시각
+   FOREIGN KEY (user_id) REFERENCES users(user_id),
+   FOREIGN KEY (material_id) REFERENCES lecture_materials(material_id),
+   FOREIGN KEY (slide_id) REFERENCES slides(slide_id)
+);
+
+-- 10. 일일 학습 시간 테이블
+CREATE TABLE daily_study_time (
+   study_date   DATE NOT NULL,                  -- 날짜
+   user_id      INT NOT NULL,                   -- 사용자 ID
+   total_time   INT,                            -- 총 학습 시간(분)
+   PRIMARY KEY (study_date, user_id),
+   FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+-- 11. 약점 키워드 집계 뷰
+CREATE OR REPLACE VIEW weak_weak_keyword_stats AS
+SELECT
+    user_id,
+    keyword_id,
+    COUNT(*) AS incorrect_count
+FROM weak_keyword_logs
+WHERE is_incorrect = TRUE
+GROUP BY user_id, keyword_id;
+
+
+
+
+
+
