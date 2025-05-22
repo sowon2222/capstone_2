@@ -1,94 +1,111 @@
-이 프로젝트는 두 명이 각자 맡은 기능을 개발하여 통합한 대학생 학습 도우미 백엔드입니다.
+# 📚 대학생 학습 도우미 플랫폼
 
-- A: 로그인/회원가입/문제풀이 등 사용자/퀴즈 관련 기능 (FastAPI, quiz_api.py 등)
-- B: 슬라이드 요약/강의자료 관리 등 PDF/AI 관련 기능 (Node.js, server.js 등)
-
-
-## 주요 파일/폴더 및 담당자
-
-| 파일/폴더/기능         | 담당자 | 설명 |
-|------------------------|--------|------|
-| `main.py`, `quiz_api.py`, `user_api.py` | A | FastAPI 기반 사용자/문제 API |
-| `server.js`, `summarizeWithGPT.js`      | B | Node.js 기반 슬라이드 요약/강의자료 API |
-| `create_database.sql`                   | 통합 | 최종 DB 스키마 (통합 필요) |
-
-** A 
-## 주요 파일/폴더 설명
-
-| 파일명              | 설명                                      |
-|---------------------|-------------------------------------------|
-| `main.py`           | FastAPI 앱 실행 및 라우터 등록             |
-| `quiz_api.py`       | 퀴즈(문제 생성/채점/오답/약점) 관련 API   |
-| `gpt_generate.py`   | GPT 기반 문제 생성/약점 기반 문제 생성 API|
-| `archive_api.py`    | 강의자료/슬라이드/문제-해설 아카이브 API  |
-| `user_api.py`       | 회원가입/로그인 등 사용자 인증 API         |
-| `models.py`         | SQLAlchemy ORM 모델 정의                  |
-| `database.py`       | DB 연결 및 세션 관리                      |
-| `schemas.py`        | Pydantic 데이터 모델                      |
-| `auth.py`           | JWT 인증/토큰 관련 함수                   |
-| `캡스톤db_1.txt`    | MariaDB 테이블/뷰 생성 SQL 예시           |
+> **Node.js(Express) + FastAPI + React 기반**  
+> 강의자료 PDF 업로드, OCR, GPT 요약/문제 생성, 사용자 인증/문제풀이 등 통합 학습 플랫폼
 
 ---
 
-## 주요 API 엔드포인트
+## 🗂️ 프로젝트 구조
 
-| 경로                      | 메서드 | 설명                       |
-|---------------------------|--------|----------------------------|
-| `/quiz/generate`          | POST   | 슬라이드 기반 문제 생성(GPT) |
-| `/quiz/weak-generate`     | POST   | 약점 키워드 기반 문제 생성   |
-| `/quiz/submit`            | POST   | 문제 제출/채점/오답 기록     |
-| `/quiz/weak-review`       | GET    | 약점 키워드 복습(오답노트)   |
-| `/quiz/wrong-notes`       | GET    | 오답노트 전체 조회           |
-| `/quiz/my-attempts`       | GET    | 내 풀이 기록                 |
-| `/quiz/register`          | POST   | 문제 직접 등록               |
-| `/quiz/all`               | GET    | 전체 문제 목록               |
-| `/register`               | POST   | 회원가입                     |
-| `/login`                  | POST   | 로그인                       |
-| `/archive/{lecture_id}`   | GET    | 강의자료별 슬라이드/문제/해설|
-| `/archives`               | GET    | 내 강의자료 목록             |
+```
+project-root/
+├── backend/           # 백엔드 (Node.js, FastAPI, DB, AI)
+│   ├── config/        # 설정/초기화 스크립트 (ex. create_database.sql)
+│   ├── uploads/       # 업로드 파일 (PDF 등)
+│   ├── temp_files/    # 임시 파일
+│   ├── venv/          # Python 가상환경 (git에 올리지 않음)
+│   ├── .env           # 환경변수 (git에 올리지 않음)
+│   ├── .env.example   # 환경변수 예시
+│   ├── requirements.txt
+│   ├── package.json
+│   ├── main.py, server.js, ... # 주요 백엔드 코드
+│   └── ...
+├── frontend/          # 프론트엔드 (React 등)
+│   ├── public/
+│   ├── src/
+│   ├── .env
+│   ├── .env.example
+│   ├── package.json
+│   └── ...
+├── .gitignore
+├── README.md
+└── ...
+```
 
 ---
 
-jwt 토큰 아직 수정 중....
+## 🚀 빠른 시작
 
-** B 
-
-- PDF 강의 자료를 업로드하고, OCR을 통해 텍스트를 추출한 후 GPT를 활용하여 요약 및 문제를 생성하는 기능을 제공합니다.
-
-
-## 주요 기능
-- PDF 강의 자료 업로드 및 관리
-- OCR을 통한 텍스트 추출
-- GPT를 활용한 슬라이드 요약 및 문제 생성
-- 학습 진도 및 강도(intensity) 추적
-- 사용자별 약점 키워드 분석
-
-
-## 기술 스택
-- Node.js
-- Express.js
-- MariaDB
-- JWT 인증
-- OpenAI GPT API
-- Tesseract.js (OCR)
-- PDF.js
-
-
-## 설치 방법
-
-1. 저장소 클론
+### 1. 저장소 클론
 ```bash
 git clone [repository-url]
 cd backend
 ```
 
-2. 의존성 설치
-```bash
-npm install
-```
+### 2. 의존성 설치
+- **Node.js**
+  ```bash
+  npm install
+  ```
+- **Python**
+  ```bash
+  python -m venv venv
+  source venv/bin/activate  # (Windows: venv\Scripts\activate)
+  pip install -r requirements.txt
+  ```
 
-3. 환경 변수 설정 -> 중요 중요 
-`.env.example` 파일을 `.env`로 복사하고 필요한 값들을 설정합니다:
+### 3. 환경 변수 설정
+- `.env.example` 파일을 복사해 `.env`로 만들고, 값을 채워주세요.
+- **백엔드 예시**
+  ```env
+  PORT=3000
+  DB_HOST=localhost
+  DB_USER=root
+  DB_PASSWORD=1234
+  DB_NAME=study_platform
+  JWT_SECRET=your-secret-key
+  OPENAI_API_KEY=your-openai-api-key
+  ```
+
+### 4. 데이터베이스 초기화
+- MariaDB/MySQL에서 아래 명령어로 DB/테이블 생성
+  ```bash
+  mysql -u root -p < config/create_database.sql
+  ```
+
+### 5. 서버 실행
+- **Node.js**
+  ```bash
+  npm start
+  ```
+- **FastAPI**
+  ```bash
+  uvicorn main:app --reload
+  ```
+
+---
+
+## 🧩 주요 기능
+- PDF 강의자료 업로드 및 관리
+- OCR(텍스트 추출, Tesseract)
+- GPT 기반 슬라이드 요약/문제 생성
+- 사용자 인증/문제풀이/오답노트/약점 분석
+- 학습 진도 및 intensity 추적
+
+---
+
+## 🛠️ 기술 스택
+- Node.js, Express.js
+- FastAPI, Python
+- MariaDB
+- JWT 인증
+- OpenAI GPT API
+- Tesseract OCR
+- React (프론트)
+
+---
+
+## ⚙️ 환경 변수 예시 (`.env.example`)
 ```env
 PORT=3000
 DB_HOST=localhost
@@ -99,91 +116,78 @@ JWT_SECRET=your-secret-key
 OPENAI_API_KEY=your-openai-api-key
 ```
 
-4. 데이터베이스 설정
-```bash
-mysql -u root -p < create_database.sql
-```
+---
 
-5. 서버 실행
-```bash
-npm start
-```
-
-## API 엔드포인트
-### 인증
-- POST `/api/register` - 회원가입
-- POST `/api/login` - 로그인
-- GET `/api/profile` - 사용자 정보 조회
-
-### 강의 자료
-- POST `/api/upload` - PDF 업로드
-- GET `/archive/list` - 업로드된 자료 목록
-- GET `/archive/:lecture_id` - 특정 자료의 슬라이드 요약
-- POST `/archive/:lecture_id/slide/:slide_number/summary` - 슬라이드 요약 생성
-- POST `/archive/:lecture_id/summary` - 전체 자료 요약
-
-### 학습 관리
-- POST `/api/study-time` - 학습 시간 기록
-- GET `/api/study-intensity/today` - 오늘의 학습 강도
-- GET `/api/study-intensity/month` - 이번 달 학습 강도
-
-
-## 프로젝트 구조
-backend/
-├── node_modules/        # 의존성 모듈
-├── uploads/            # 업로드된 PDF 파일
-├── server.js           # 메인 서버 파일
-├── summarizeWithGPT.js # GPT 관련 기능
-├── create_database.sql # 데이터베이스 스키마
-├── package.json        # 프로젝트 의존성
-└── .env               # 환경 변수
-```
-
-
-## 주의사항
-
-- `public` 디렉토리는 프론트엔드와 연결하기 전 테스트를 위해 만든 정적 HTML 파일입니다.
-- ⚠️ 주의: create_database.sql 파일을 실행하면 기존 study_platform 데이터베이스가 완전히 삭제되고 새로 생성됩니다.
-> 운영 환경에서는 절대 실행하지 마세요!
-- `server.js`에서 모든 API를 관리하고 있으며, 향후 확장성을 위해 분할할 예정입니다.
-
-## 데이터베이스 초기화 및 재설정 방법
-
-1. **기존 데이터베이스 삭제**
-   - MariaDB/MySQL에 접속 후 아래 명령어 실행:
-     ```sql
-     DROP DATABASE IF EXISTS study_platform;
-     ```
-
-2. **최신 데이터베이스 스키마로 재생성**
-   - 터미널(명령 프롬프트)에서 아래 명령어 실행:
-     ```bash
-     mysql -u root -p < create_database.sql
-     ```
-   - (비밀번호 입력 후 자동으로 study_platform 데이터베이스와 모든 테이블이 생성됩니다.)
-
-3. **.env 파일 설정**
-   - DB 정보가 아래와 같아야 합니다:
-     ```
-     DB_USER=root
-     DB_PASSWORD=1234
-     DB_HOST=localhost
-     DB_PORT=3306
-     DB_NAME=study_platform
-     ```
-
-4. **서버 재시작**
-   - Node.js, FastAPI 등 모든 서버를 재시작하세요.
+## 🗄️ 데이터베이스 초기화
+- **DB 스키마/초기화:**
+  ```bash
+  mysql -u root -p < backend/config/create_database.sql
+  ```
+- **주의:** 기존 study_platform DB가 생성됩니다. 필요시 삭제 쿼리문을 실행하세요. 
 
 ---
 
-**⚠️ 주의:**  
-이 작업을 하면 기존 데이터베이스의 모든 데이터가 삭제됩니다.  
-중요한 데이터가 있다면 백업 후 진행하세요!
+## 📄 Tesseract OCR 설치 안내
 
-# 05/23 - 백엔드 합치면서 변경점 
-1. 데이터베이스 연결 설정 env로 관리 
-가상환경에서 아래 명령어 실행 
- pip install python-dotenv 
+### 1. 설치 방법
+- **Windows:** [UB Mannheim Tesseract 설치 파일](https://github.com/UB-Mannheim/tesseract/wiki) 다운로드/설치 후 환경변수 등록
+- **Mac:**
+  ```bash
+  brew install tesseract
+  ```
+- **Linux:**
+  ```bash
+  sudo apt-get install tesseract-ocr
+  ```
 
- 
+### 2. 언어 데이터 추가
+- 한글: `kor.traineddata`
+- 영어: `eng.traineddata`
+- 다운로드 후 Tesseract의 `tessdata` 폴더에 넣으세요.
+
+### 3. 파이썬 코드에서 경로 지정 예시
+```python
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Windows 예시
+```
+
+### 4. 참고 링크
+- [Tesseract 공식 문서](https://tesseract-ocr.github.io/)
+- [파이썬 pytesseract 문서](https://pypi.org/project/pytesseract/)
+
+---
+
+## 📑 주요 API 엔드포인트 (예시)
+
+### 인증/사용자
+- `POST /register` - 회원가입
+- `POST /login` - 로그인
+- `GET /api/profile` - 사용자 정보 조회
+
+### 강의자료/슬라이드
+- `POST /api/upload` - PDF 업로드
+- `GET /archive/list` - 업로드된 자료 목록
+- `GET /archive/:lecture_id` - 특정 자료의 슬라이드 요약
+- `POST /archive/:lecture_id/slide/:slide_number/summary` - 슬라이드 요약 생성
+- `POST /archive/:lecture_id/summary` - 전체 자료 요약
+
+### 문제/학습 관리
+- `POST /quiz/generate` - 슬라이드 기반 문제 생성(GPT)
+- `POST /quiz/submit` - 문제 제출/채점
+- `GET /quiz/wrong-notes` - 오답노트 전체 조회
+- `POST /api/study-time` - 학습 시간 기록
+- `GET /api/study-intensity/today` - 오늘의 학습 강도
+- `GET /api/study-intensity/month` - 이번 달 학습 강도
+
+---
+
+## ⚠️ 주의사항
+- `.env`, `venv/`, `node_modules/`, `uploads/` 등은 git에 올리지 마세요. `.gitignore`로 관리
+- `create_database.sql` 실행 시 기존 DB가 삭제/재생성됩니다. 운영 환경에서는 주의!
+- Tesseract 설치/경로/언어데이터는 각자 환경에 맞게 설정
+- 민감정보는 `.env`로만 관리, 절대 커밋 금지
+
+---
+
+## 🙋‍♀️ 문의/기여
+- 이슈/PR/질문은 언제든 환영합니다! 
