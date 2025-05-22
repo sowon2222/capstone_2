@@ -2,16 +2,17 @@ from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import os
 
-# ? º¸¾È ¼³Á¤
-SECRET_KEY = "a9$2kL!8zQw@7xP0rT6vB#1sDfG^4hJmN"
+# ?  
+SECRET_KEY = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-# ? Swagger ÀÚµ¿ Authorize Áö¿øÀ» À§ÇÑ Bearer º¸¾È ¼³Á¤ (ÀÌ°Å ²À!)
+# ? Swagger ï¿½Úµï¿½ Authorize ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ Bearer ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½Ì°ï¿½ ï¿½ï¿½!)
 security = HTTPBearer(auto_error=True)
 
-# ? JWT ÅäÅ« »ý¼º ÇÔ¼ö
+# ? JWT ï¿½ï¿½Å« ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
@@ -19,7 +20,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# ? ÅäÅ« °ËÁõ ÇÔ¼ö
+# ? ï¿½ï¿½Å« ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -30,7 +31,7 @@ def verify_token(token: str):
     except JWTError:
         return None
 
-# ? ÀÎÁõ »ç¿ëÀÚ °¡Á®¿À±â ÇÔ¼ö
+# ? ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ô¼ï¿½
 def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
     user_id = verify_token(token)

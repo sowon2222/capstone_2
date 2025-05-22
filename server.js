@@ -15,7 +15,12 @@ require('dotenv').config();
 const app = express();
 
 // 미들웨어 설정
-app.use(cors());
+app.use(cors({
+  origin: '*', // 또는 ["http://localhost:3000", "http://localhost:5500"] 등으로 제한 가능
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json());
 // <-- 여기 부분에 프론트랑 연결 --> app.use(express.static('public')); 이었던 곳임 
 
@@ -23,21 +28,22 @@ app.use(express.json());
 const pool = mariadb.createPool({
     host: 'localhost',
     user: 'root',
-    password: '1234',
-    database: 'study_platform',
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     connectionLimit: 5
 });
 
 // JWT 토큰 검증 미들웨어
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // "Bearer TOKEN" 형식에서 토큰 추출
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ error: '인증 토큰이 필요합니다.' });
     }
 
-    jwt.verify(token, 'your-secret-key', (err, user) => {
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        console.log('Decoded JWT:', user);
         if (err) {
             return res.status(403).json({ error: '유효하지 않은 토큰입니다.' });
         }
@@ -68,6 +74,7 @@ const upload = multer({
     }
 });
 
+/* 
 // 회원가입 API
 app.post('/api/register', async (req, res) => {
     let conn;
@@ -162,6 +169,8 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+*/ 
+
 // 사용자 정보 조회 API (토큰 필요)
 app.get('/api/profile', authenticateToken, async (req, res) => {
     let conn;
@@ -170,7 +179,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
         
         const users = await conn.query(
             'SELECT user_id, username FROM users WHERE user_id = ?',
-            [req.user.userId]
+            [req.user.user_id]
         );
         
         if (users.length === 0) {
@@ -210,7 +219,7 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
         // 강의자료 정보 저장 (페이지 수만)
         const result = await pool.query(
             'INSERT INTO lecture_materials (user_id, material_name, page, progress) VALUES (?, ?, ?, 0)',
-            [req.user.userId, req.file.filename, numPages]
+            [req.user.user_id, req.file.filename, numPages]
         );
         
         const materialId = result.insertId.toString();
@@ -229,7 +238,7 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
 // 사용자 업로드 자료 리스트 (제목만)
 app.get('/archive/list', authenticateToken, async (req, res) => {
     try {
-        const userId = req.user.userId;
+        const userId = req.user.user_id;
         const results = await pool.query(
             'SELECT material_id, material_name, page, progress FROM lecture_materials WHERE user_id = ? ORDER BY material_id DESC',
             [userId]
@@ -273,13 +282,15 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
             [materialId, slideNumber]
         );
         if (existing) {
-            return res.json({ slide: existing });
+            // main_keywords를 배열로 변환
+            const mainKeywordsArr = existing.main_keywords ? existing.main_keywords.split(',').map(k => k.trim()) : [];
+            return res.json({ slide: existing, slide_id: existing.slide_id, main_keywords: mainKeywordsArr });
         }
 
         // PDF 파일 경로 찾기
         const [material] = await pool.query(
             'SELECT material_name FROM lecture_materials WHERE material_id = ? AND user_id = ?',
-            [materialId, req.user.userId]
+            [materialId, req.user.user_id]
         );
         if (!material) return res.status(404).json({ error: '자료 없음' });
 
@@ -305,11 +316,49 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         const gptResult = await summarizeSlideWithGPT(text);
         // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary }
 
+        // main_keywords 처리 (문자열 → 배열)
+        let mainKeywordsArr = [];
+        if (gptResult.main_keywords) {
+            mainKeywordsArr = gptResult.main_keywords.split(',').map(k => k.trim()).filter(Boolean);
+        }
+        // keywords 테이블에 저장 및 slide_keywords 연결
+        let firstKeywordId = null;
+        for (let i = 0; i < mainKeywordsArr.length; i++) {
+            const keyword = mainKeywordsArr[i];
+            // 1. keywords 테이블에 존재하는지 확인
+            const [existingKeyword] = await pool.query(
+                'SELECT keyword_id FROM keywords WHERE keyword_name = ?',
+                [keyword]
+            );
+            let keywordId;
+            if (existingKeyword) {
+                keywordId = existingKeyword.keyword_id;
+            } else {
+                const result = await pool.query(
+                    'INSERT INTO keywords (keyword_name) VALUES (?)',
+                    [keyword]
+                );
+                keywordId = result.insertId;
+            }
+            // 2. slide_keywords 테이블에 연결
+            // (slide_id는 아래에서 생성 후 연결)
+            if (i === 0) firstKeywordId = keywordId;
+        }
+
         // DB 저장 (구조화 컬럼 포함)
         const slideResult = await pool.query(
             'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary]
         );
+        const slideId = slideResult.insertId;
+
+        // slide_keywords 연결 (슬라이드당 첫 번째 키워드만)
+        if (firstKeywordId) {
+            await pool.query(
+                'INSERT IGNORE INTO slide_keywords (slide_id, keyword_id) VALUES (?, ?)',
+                [slideId, firstKeywordId]
+            );
+        }
 
         // 이미지 파일 삭제
         fs.unlinkSync(imagePath);
@@ -339,7 +388,7 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         // 오늘 이전의 누적 진도율
         const [lastLog] = await pool.query(
             'SELECT total_progress FROM study_progress_log WHERE user_id = ? AND material_id = ? ORDER BY study_date DESC LIMIT 1',
-            [req.user.userId, materialId]
+            [req.user.user_id, materialId]
         );
         const prevProgress = lastLog ? Number(lastLog.total_progress) : 0;
         const progressDelta = progress - prevProgress;
@@ -347,25 +396,25 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         // 오늘 study_progress_log에 기록 (있으면 update, 없으면 insert)
         const [existingLog] = await pool.query(
             'SELECT * FROM study_progress_log WHERE user_id = ? AND material_id = ? AND study_date = ?',
-            [req.user.userId, materialId, today]
+            [req.user.user_id, materialId, today]
         );
         if (existingLog) {
             await pool.query(
                 'UPDATE study_progress_log SET progress_delta = ?, total_progress = ? WHERE log_id = ?',
                 [progressDelta, progress, existingLog.log_id]
             );
-            console.log(`[UPDATE] study_progress_log: user_id=${req.user.userId}, material_id=${materialId}, date=${today}, progress=${progress}`);
+            console.log(`[UPDATE] study_progress_log: user_id=${req.user.user_id}, material_id=${materialId}, date=${today}, progress=${progress}`);
         } else {
             await pool.query(
                 'INSERT INTO study_progress_log (user_id, material_id, study_date, progress_delta, total_progress) VALUES (?, ?, ?, ?, ?)',
-                [req.user.userId, materialId, today, progressDelta, progress]
+                [req.user.user_id, materialId, today, progressDelta, progress]
             );
-            console.log(`[INSERT] study_progress_log: user_id=${req.user.userId}, material_id=${materialId}, date=${today}, progress=${progress}`);
+            console.log(`[INSERT] study_progress_log: user_id=${req.user.user_id}, material_id=${materialId}, date=${today}, progress=${progress}`);
         }
 
         res.json({
             slide: {
-                id: slideResult.insertId.toString(),
+                id: slideId.toString(),
                 slide_number: slideNumber,
                 original_text: text,
                 slide_title: gptResult.slide_title,
@@ -373,7 +422,9 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
                 main_keywords: gptResult.main_keywords,
                 important_sentences: gptResult.important_sentences,
                 summary: gptResult.summary
-            }
+            },
+            slide_id: slideId,
+            main_keywords: mainKeywordsArr
         });
     } catch (err) {
         console.error('슬라이드 요약 오류:', err);
@@ -420,7 +471,7 @@ app.post('/archive/:lecture_id/progress', authenticateToken, async (req, res) =>
     try {
         await pool.query(
             'UPDATE lecture_materials SET progress = ? WHERE material_id = ? AND user_id = ?',
-            [progress, materialId, req.user.userId]
+            [progress, materialId, req.user.user_id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -430,7 +481,7 @@ app.post('/archive/:lecture_id/progress', authenticateToken, async (req, res) =>
 
 // 깃허브 잔디느낌 오늘의 학습 intensity 계산
 app.get('/api/study-intensity/today', authenticateToken, async (req, res) => {
-    const userId = req.user.userId;
+    const userId = req.user.user_id;
     const sql = `
         SELECT 
             d.study_date,
@@ -483,7 +534,7 @@ app.get('/api/study-intensity/today', authenticateToken, async (req, res) => {
 
 // 이번 달 intensity_score 전체 조회 API
 app.get('/api/study-intensity/month', authenticateToken, async (req, res) => {
-    const userId = req.user.userId;
+    const userId = req.user.user_id;
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1; // JS는 0~11, SQL은 1~12
@@ -497,7 +548,7 @@ app.get('/api/study-intensity/month', authenticateToken, async (req, res) => {
 
 // 오늘의 학습 시간 누적 API
 app.post('/api/study-time', authenticateToken, async (req, res) => {
-    const userId = req.user.userId;
+    const userId = req.user.user_id;
     const { duration } = req.body; // 초 단위
     const today = new Date().toISOString().slice(0, 10);
 

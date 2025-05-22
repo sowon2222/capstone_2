@@ -87,7 +87,7 @@ cd backend
 npm install
 ```
 
-3. 환경 변수 설정
+3. 환경 변수 설정 -> 중요 중요 
 `.env.example` 파일을 `.env`로 복사하고 필요한 값들을 설정합니다:
 ```env
 PORT=3000
@@ -129,7 +129,6 @@ npm start
 
 
 ## 프로젝트 구조
-```
 backend/
 ├── node_modules/        # 의존성 모듈
 ├── uploads/            # 업로드된 PDF 파일
@@ -140,19 +139,51 @@ backend/
 └── .env               # 환경 변수
 ```
 
-## 개발 가이드
-### 코드 스타일
-- ESLint를 사용한 코드 스타일 검사
-- Prettier를 사용한 코드 포맷팅
-
-## 라이선스
-
-MIT License
 
 ## 주의사항
 
 - `public` 디렉토리는 프론트엔드와 연결하기 전 테스트를 위해 만든 정적 HTML 파일입니다.
-- `create_database.sql`을 실행하여 데이터베이스를 만들 수 있습니다. (데이터베이스는 수정이 필요할 수 있습니다.)
+- ⚠️ 주의: create_database.sql 파일을 실행하면 기존 study_platform 데이터베이스가 완전히 삭제되고 새로 생성됩니다.
+> 운영 환경에서는 절대 실행하지 마세요!
 - `server.js`에서 모든 API를 관리하고 있으며, 향후 확장성을 위해 분할할 예정입니다.
+
+## 데이터베이스 초기화 및 재설정 방법
+
+1. **기존 데이터베이스 삭제**
+   - MariaDB/MySQL에 접속 후 아래 명령어 실행:
+     ```sql
+     DROP DATABASE IF EXISTS study_platform;
+     ```
+
+2. **최신 데이터베이스 스키마로 재생성**
+   - 터미널(명령 프롬프트)에서 아래 명령어 실행:
+     ```bash
+     mysql -u root -p < create_database.sql
+     ```
+   - (비밀번호 입력 후 자동으로 study_platform 데이터베이스와 모든 테이블이 생성됩니다.)
+
+3. **.env 파일 설정**
+   - DB 정보가 아래와 같아야 합니다:
+     ```
+     DB_USER=root
+     DB_PASSWORD=1234
+     DB_HOST=localhost
+     DB_PORT=3306
+     DB_NAME=study_platform
+     ```
+
+4. **서버 재시작**
+   - Node.js, FastAPI 등 모든 서버를 재시작하세요.
+
+---
+
+**⚠️ 주의:**  
+이 작업을 하면 기존 데이터베이스의 모든 데이터가 삭제됩니다.  
+중요한 데이터가 있다면 백업 후 진행하세요!
+
+# 05/23 - 백엔드 합치면서 변경점 
+1. 데이터베이스 연결 설정 env로 관리 
+가상환경에서 아래 명령어 실행 
+ pip install python-dotenv 
 
  

@@ -4,6 +4,7 @@ from user_api import router as user_router
 from archive_api import router as archive_router
 from gpt_generate import router as gpt_router
 from quiz_api import router as quiz_router
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -44,3 +45,12 @@ app.include_router(user_router)
 app.include_router(archive_router)
 app.include_router(gpt_router)
 app.include_router(quiz_router)
+
+# 👇 이 부분 추가!
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 또는 ["http://localhost:3000"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
