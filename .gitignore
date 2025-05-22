@@ -1,32 +1,42 @@
-# Dependencies
+# Node.js dependencies
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-
-# Environment variables
 .env
+
+# Production
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads
+uploads/
 
 # IDE
 .vscode/
 .idea/
 
-# Logs
-logs/
-*.log
-
-# Uploads
-uploads/
-
 # OS
 .DS_Store
 Thumbs.db
-W
 
+# Vite
+.vite/
+
+# Optional
+*.local
 
 # Archives
 *.zip
 *.rar
 *.7z
 
-echo "backend/" >> .gitignore
+# Python
+venv39/
+__pycache__/
+*.pyc
+venv/
