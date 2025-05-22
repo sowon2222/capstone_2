@@ -3,9 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../components/common/Button";
 import { Card, CardContent } from "../components/common/Card";
 import { Input } from "../components/common/Input";
-import { Separator } from "../components/common/Separator";
-import { FcGoogle } from "react-icons/fc";
-import { SiKakaotalk, SiNaver } from "react-icons/si";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginPage() {
@@ -37,41 +34,6 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
-
-  const handleSocialLogin = async (provider) => {
-    try {
-      // TODO: 소셜 로그인 API 호출
-      // 소셜 로그인 성공 시 토큰 발급
-      // 소셜 로그인 실패 시 오류 메시지 반환
-      
-      const userData = { id: `${provider}_user`, name: `${provider} 사용자` }; // 임시 데이터
-      await login(userData);
-      navigate("/");
-    } catch (error) {
-      setError(`${provider} 로그인 중 오류가 발생했습니다.`);
-    }
-  };
-
-  const socialLogins = [
-    {
-      name: "Google",
-      icon: <FcGoogle className="w-6 h-6" />,
-      text: "Google 계정으로 로그인",
-      bgColor: "bg-white",
-    },
-    {
-      name: "Kakao",
-      icon: <SiKakaotalk className="w-6 h-6 text-black" />,
-      text: "Kakao 계정으로 로그인",
-      bgColor: "bg-[#fee500]",
-    },
-    {
-      name: "Naver",
-      icon: <SiNaver className="w-6 h-6 text-white" />,
-      text: "Naver 계정으로 로그인",
-      bgColor: "bg-[#03C75A]",
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
@@ -128,33 +90,6 @@ export default function LoginPage() {
                 {isLoading ? "로그인 중..." : "Log in"}
               </Button>
             </form>
-
-            {/* Divider */}
-            <div className="w-full px-8 mt-4">
-              <div className="flex items-center">
-                <span className="text-[#4e4e4e] text-sm whitespace-nowrap">
-                  Or continue with
-                </span>
-                <Separator className="flex-grow ml-4 bg-[#4e4e4e]" />
-              </div>
-            </div>
-
-            {/* 소셜 버튼 */}
-            <div className="w-full px-8 mt-4 space-y-3 mb-3">
-              {socialLogins.map((login) => (
-                <Button
-                  key={login.name}
-                  className={`w-full h-[45px] ${login.bgColor} hover:bg-opacity-90 rounded text-[#4e4e4e] text-sm justify-start px-4 border-none`}
-                  onClick={() => handleSocialLogin(login.name.toLowerCase())}
-                  disabled={isLoading}
-                >
-                  <div className="flex items-center">
-                    <span className="mr-4">{login.icon}</span>
-                    <span>{login.text}</span>
-                  </div>
-                </Button>
-              ))}
-            </div>
           </CardContent>
         </Card>
       </div>

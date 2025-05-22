@@ -12,7 +12,7 @@ export const analyzePdf = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await axios.post(`${API_BASE_URL}/analyze-pdf`, formData, {
+    const response = await axios.post(`${API_BASE_URL}/conceptmap/analyze-pdf`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

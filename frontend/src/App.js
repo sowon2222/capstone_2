@@ -4,13 +4,13 @@ import FreqTable from './components/concept/FreqTable';
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppLayout from "./components/layout/AppLayout";
 import HomePage from "./pages/HomePage";
-import ProblemPage from "./pages/ProblemPage";
+import ProblemSolving from "./pages/ProblemSolving";
 import ArchivePage from "./pages/ArchivePage";
-import CommunityPage from "./pages/CommunityPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import SlideSummary from "./pages/SlideSummary";
-import ConceptMapPage from "./pages/ConceptMapPage";
+import DocumentAnalysis from "./pages/DocumentAnalysis";
+import WrongAnswerNote from "./components/problem-solving/WrongAnswerNote";
+import AdditionalPractice from "./components/problem-solving/AdditionalPractice";
 import { AuthProvider } from "./contexts/AuthContext";
 import { AnalysisProvider } from "./contexts/AnalysisContext";
 
@@ -70,11 +70,11 @@ function App() {
           <Routes>
             <Route element={<AppLayout />}>
               <Route path="/" element={<HomePage />} />
-              <Route path="/slide-summary" element={<SlideSummary />} />
-              <Route path="/problems" element={<ProblemPage />} />
-              <Route path="/concept-map" element={<ConceptMapPage />} />
+              <Route path="/document-analysis" element={<DocumentAnalysis />} />
+              <Route path="/problem-solving" element={<ProblemSolving />} />
               <Route path="/archive" element={<ArchivePage />} />
-              <Route path="/community" element={<CommunityPage />} />
+              <Route path="/wrong-answers" element={<WrongAnswerNote />} />
+              <Route path="/additional-practice" element={<AdditionalPractice />} />
             </Route>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />

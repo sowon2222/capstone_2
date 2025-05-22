@@ -1,2 +1,1 @@
-export { authService } from './authService';
-export { socialAuthService } from './socialAuthService'; 
+export { authService } from './authService'; 

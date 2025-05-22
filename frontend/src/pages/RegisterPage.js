@@ -3,9 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../components/common/Button";
 import { Card, CardContent } from "../components/common/Card";
 import { Input } from "../components/common/Input";
-import { Separator } from "../components/common/Separator";
-import { FcGoogle } from "react-icons/fc";
-import { SiKakaotalk, SiNaver } from "react-icons/si";
 import { useAuth } from "../contexts/AuthContext";
 import { authService } from "../services/authService";
 
@@ -50,37 +47,6 @@ export default function RegisterPage() {
     }
   };
 
-  const handleSocialRegister = async (provider) => {
-    try {
-      const userData = await authService.socialAuth(provider, true);
-      await login(userData);
-      navigate("/");
-    } catch (error) {
-      setError(error.message);
-    }
-  };
-
-  const socialLoginOptions = [
-    {
-      name: "Google",
-      icon: <FcGoogle className="w-6 h-6" />,
-      text: "Google 계정으로 시작하기",
-      bgColor: "bg-white",
-    },
-    {
-      name: "Kakao",
-      icon: <SiKakaotalk className="w-6 h-6 text-black" />,
-      text: "Kakao 계정으로 시작하기",
-      bgColor: "bg-[#fee500]",
-    },
-    {
-      name: "Naver",
-      icon: <SiNaver className="w-6 h-6 text-white" />,
-      text: "Naver 계정으로 시작하기",
-      bgColor: "bg-[#03C75A]",
-    },
-  ];
-
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
       {/* 로고 */}
@@ -91,22 +57,22 @@ export default function RegisterPage() {
       <div className="flex-1 flex items-center justify-center">
         <Card className="w-[480px] bg-[#1a1a1a] rounded-lg shadow border-none">
           <CardContent className="p-0 flex flex-col items-center">
-            {/* Header */}
-            <div className="w-full px-8">
+            {/* Register Header */}
+            <div className="w-full px-8 mt-8">
               <h2 className="text-2xl font-bold text-[#FFFFFF]">회원가입</h2>
               <p className="mt-2 text-base text-[#BBBBBB]">
-                회원가입 후 로그인 가능합니다
+                새로운 계정을 만들어보세요
               </p>
             </div>
 
-            {/* Input Form */}
+            {/* 회원가입 폼 */}
             <form onSubmit={handleSubmit} className="w-full px-8 mt-4 space-y-3">
               {error && (
                 <div className="text-red-500 text-sm text-center">{error}</div>
               )}
               <Input
                 name="id"
-                className="h-[50px] px-4 py-3 bg-white rounded-[10px] border border-[#8abfff] text-[#4e4e4e] text-base"
+                className="h-[50px] px-4 py-3 bg-white rounded-[10px] border border-[#e6e6e6] text-[#4e4e4e] text-base"
                 placeholder="아이디"
                 value={formData.id}
                 onChange={handleChange}
@@ -157,33 +123,6 @@ export default function RegisterPage() {
                 {isLoading ? "회원가입 중..." : "회원가입"}
               </Button>
             </form>
-
-            {/* Divider */}
-            <div className="w-full px-8 mt-4">
-              <div className="flex items-center">
-                <span className="text-[#4e4e4e] text-sm whitespace-nowrap">
-                  Or continue with
-                </span>
-                <Separator className="flex-grow ml-4 bg-[#4e4e4e]" />
-              </div>
-            </div>
-
-            {/* Social Buttons */}
-            <div className="w-full px-8 mt-4 space-y-3 ">
-              {socialLoginOptions.map((login) => (
-                <Button
-                  key={login.name}
-                  className={`w-full h-[45px] ${login.bgColor} hover:bg-opacity-90 rounded text-[#4e4e4e] text-sm justify-start px-4 border-none`}
-                  onClick={() => handleSocialRegister(login.name.toLowerCase())}
-                  disabled={isLoading}
-                >
-                  <div className="flex items-center">
-                    <span className="mr-4">{login.icon}</span>
-                    <span>{login.text}</span>
-                  </div>
-                </Button>
-              ))}
-            </div>
           </CardContent>
         </Card>
       </div>

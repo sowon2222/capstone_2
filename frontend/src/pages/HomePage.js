@@ -3,6 +3,8 @@ import { Paperclip, Search } from "lucide-react";
 import { Card, CardContent } from "../components/common/Card";
 import { useNavigate } from "react-router-dom";
 import { useAnalysis } from "../contexts/AnalysisContext";
+import CalendarHeatmap from 'react-calendar-heatmap';
+import 'react-calendar-heatmap/dist/styles.css';
 
 export default function HomePage() {
   const popularQuestions = [
@@ -17,6 +19,7 @@ export default function HomePage() {
   const { setAnalysisResult, setUploadedFile } = useAnalysis();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(2025);
 
   // 파일 선택 시 처리 함수
   const handleFileChange = async (e) => {
@@ -56,102 +59,158 @@ export default function HomePage() {
     }
   };
 
+  // 예시용 데이터
+  const userName = "홍길동"; // 실제 로그인 정보에서 받아오도록
+  const todayStudyTime = "1시간 20분";
+  const recentFiles = [
+    { id: 1, name: "챕터1.pdf", link: "/study/1" },
+    { id: 2, name: "챕터2.pdf", link: "/study/2" },
+  ];
+  const studyingFiles = [
+    { id: 3, name: "챕터3.pdf", link: "/study/3" },
+  ];
+  const completedFiles = [
+    { id: 4, name: "챕터4.pdf", link: "/study/4" },
+  ];
+  const heatmapData2025 = [
+    { date: "2025-05-01", count: 2 },
+    { date: "2025-05-02", count: 1 },
+    // ... 실제 데이터로 대체
+  ];
+  const heatmapData2024 = [
+    // ... 실제 데이터로 대체
+  ];
+  const weekHistory = [
+    { date: "2025-05-01", summary: "챕터1.pdf 30분" },
+    { date: "2025-05-02", summary: "챕터2.pdf 50분" },
+    // ...최대 7개
+  ];
+
+  // 연도별 데이터 선택
+  const heatmapData = selectedYear === 2025 ? heatmapData2025 : heatmapData2024;
+
   return (
-    <div className="flex flex-col items-center w-full min-h-screen py-16 px-4">
-      {/* 검색창 */}
-      <div className="w-full max-w-2xl mb-16">
-        <div className="h-16 bg-[#18181b] rounded-2xl border border-[#23232a] flex items-center shadow-md px-4">
-          {/* 클립 아이콘 + 툴팁 */}
-          <div
-            className="relative flex items-center justify-center w-12 h-12"
-            onMouseEnter={() => setShowTooltip(true)}
-            onMouseLeave={() => setShowTooltip(false)}
+    <main className="pt-24 pb-16 px-4 max-w-7xl mx-auto">
+      {/* 👋 환영 메시지 */}
+      <div className="text-2xl font-bold text-white mb-8">
+        {userName}님, 오늘도 힘내세요!
+      </div>
+
+      {/* 상단 2단 */}
+      <div className="flex flex-col lg:flex-row gap-8 mb-12">
+        {/* 왼쪽 */}
+        <div className="flex-1 flex flex-col gap-6">
+          {/* 자료 업로드 버튼 */}
+          <button 
+            onClick={() => navigate('/document-analysis')}
+            className="w-full h-16 bg-[#346aff] text-white text-xl font-bold rounded-2xl shadow-lg hover:bg-[#2d5cd9] transition"
           >
-            <label
-              htmlFor="file-upload"
-              className="flex items-center justify-center w-12 h-12 cursor-pointer"
-              tabIndex={0}
-            >
-              <Paperclip className="w-7 h-7 text-[#bbbbbb] -rotate-45" />
-              <input
-                id="file-upload"
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                disabled={isLoading}
-              />
-            </label>
-            {/* 툴팁 */}
-            {showTooltip && (
-              <div
-                className="absolute left-1/2 top-full mt-2 -translate-x-1/2 z-10 bg-[#ededed] text-[#23232a] text-sm rounded-xl px-4 py-3 shadow-lg whitespace-nowrap"
-                style={{ borderRadius: "16px" }}
+            + 자료 업로드
+          </button>
+          {/* 오늘의 학습 시간 */}
+          <div className="bg-[#18181b] rounded-xl p-6 text-lg text-white shadow">
+            🕒 오늘 학습: <span className="font-bold">{todayStudyTime}</span>
+          </div>
+          {/* 최근 업로드 자료 */}
+          <div className="bg-[#18181b] rounded-xl p-6 text-white shadow">
+            <div className="font-semibold mb-2">📂 최근 업로드한 자료</div>
+            <ul>
+              {recentFiles.map(f => (
+                <li key={f.id} className="flex justify-between items-center py-1">
+                  <span>{f.name}</span>
+                  <a href={f.link} className="text-[#346aff] hover:underline">이어하기</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        {/* 오른쪽: 잔디형 그래프 */}
+        <div className="flex-1 bg-[#18181b] rounded-xl p-6 shadow flex flex-col items-center">
+          {/* 연도 선택 탭 */}
+          <div className="flex gap-2 mb-2">
+            {[2024, 2025].map(year => (
+              <button
+                key={year}
+                onClick={() => setSelectedYear(year)}
+                className={`px-4 py-1 rounded-lg text-sm font-semibold transition-colors
+                  ${selectedYear === year ? "bg-[#346aff] text-white" : "bg-[#23232a] text-[#bbbbbb] hover:bg-[#2d5cd9]"}
+                `}
               >
-                {/* 삼각형 */}
-                <div
-                  className="absolute -top-2 left-1/2 -translate-x-1/2"
-                  style={{
-                    width: 20,
-                    height: 10,
-                    overflow: "hidden",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 16,
-                      height: 16,
-                      background: "#ededed",
-                      transform: "rotate(-45deg)",
-                      margin: "0 auto",
-                      marginTop: 6,
-                      borderRadius: "4px",
-                      boxShadow: "0 0 2px #ededed",
-                    }}
-                  />
-                </div>
-                {isLoading ? "분석 중..." : "파일 또는 이미지\n업로드"}
-              </div>
+                {year}
+              </button>
+            ))}
+          </div>
+          <div className="font-semibold text-white mb-4">🌱 나의 학습 그래프</div>
+          <CalendarHeatmap
+            startDate={new Date(`${selectedYear}-01-01`)}
+            endDate={new Date(`${selectedYear}-12-31`)}
+            values={heatmapData}
+            classForValue={value => {
+              if (!value) return 'color-empty';
+              if (value.count >= 3) return 'color-github-4';
+              if (value.count === 2) return 'color-github-3';
+              if (value.count === 1) return 'color-github-2';
+              return 'color-github-1';
+            }}
+            showWeekdayLabels={true}
+          />
+          {/* 하단 일주일 내역 */}
+          <div
+            className="w-full mt-4 max-h-32 overflow-y-auto hide-scrollbar bg-[#23232a] rounded-lg p-3 text-white text-sm"
+            style={{ minHeight: "80px" }}
+          >
+            {weekHistory.length === 0 ? (
+              <div className="text-[#bbbbbb] text-center">최근 학습 내역이 없습니다.</div>
+            ) : (
+              <ul>
+                {weekHistory.map((item, idx) => (
+                  <li key={idx} className="flex justify-between py-1 border-b border-[#23232a] last:border-b-0">
+                    <span className="text-[#93c5fd]">{item.date}</span>
+                    <span>{item.summary}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-          {/* 입력창 */}
-          <input
-            className="flex-1 h-12 bg-transparent border-none pl-2 text-lg text-[#e0e0e0] font-normal outline-none"
-            placeholder="질문을 입력하거나 파일을 업로드 하세요"
-            disabled={isLoading}
-          />
-          {/* 돋보기 아이콘 */}
-          <button 
-            className="flex items-center justify-center w-12 h-12 bg-[#346aff] rounded-xl ml-2"
-            disabled={isLoading}
-          >
-            <Search className="w-7 h-7 text-white" />
-          </button>
         </div>
-        {error && (
-          <div className="mt-2 text-red-500 text-sm">
-            {error}
-          </div>
-        )}
       </div>
-      {/* 인기 질문 */}
-      <h2 className="text-2xl font-bold text-white mb-8 text-center">인기 질문</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {popularQuestions.map((question) => (
-          <Card
-            key={question.id}
-            className="bg-[#18181b] border-none hover:bg-[#23232a] transition-colors cursor-pointer shadow-md rounded-2xl"
-          >
-            <CardContent className="flex items-center justify-center h-40">
-              <span className="text-xl text-[#e0e0e0] font-medium">
-                {question.label}
-              </span>
-            </CardContent>
-          </Card>
-        ))}
+
+      {/* 하단 2단 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+        {/* 학습중 */}
+        <div className="bg-[#18181b] rounded-xl p-6 shadow text-white">
+          <div className="font-semibold mb-2">📘 학습중인 자료</div>
+          {studyingFiles.length === 0 ? (
+            <div className="text-[#bbbbbb]">진행중인 자료가 없습니다.</div>
+          ) : (
+            studyingFiles.map(f => (
+              <div key={f.id} className="flex justify-between items-center py-1">
+                <span>{f.name}</span>
+                <a href={f.link} className="text-[#346aff] hover:underline">이어하기</a>
+              </div>
+            ))
+          )}
+        </div>
+        {/* 학습완료 */}
+        <div className="bg-[#18181b] rounded-xl p-6 shadow text-white">
+          <div className="font-semibold mb-2">✅ 학습완료 자료</div>
+          {completedFiles.length === 0 ? (
+            <div className="text-[#bbbbbb]">완료된 자료가 없습니다.</div>
+          ) : (
+            completedFiles.map(f => (
+              <div key={f.id} className="flex justify-between items-center py-1">
+                <span>{f.name}</span>
+                <a href={f.link} className="text-[#346aff] hover:underline">복습하기</a>
+              </div>
+            ))
+          )}
+        </div>
       </div>
-    </div>
+
+      {/*학습 리포트 요약 배너 */}
+      <div className="bg-gradient-to-r from-[#346aff] to-[#2d5cd9] rounded-xl p-6 text-white text-lg font-semibold shadow text-center">
+        📈 오답률이 높은 자료는 TCP/IP 영역 입니다. "이런 부분을 더 공부하세요!"
+      </div>
+    </main>
   );
 }

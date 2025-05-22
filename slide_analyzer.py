@@ -2,7 +2,7 @@
 import fitz
 import openai
 import json
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import networkx as nx
 from collections import Counter
@@ -12,18 +12,13 @@ import os
 import tempfile
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+import csv
 
 # .env 파일을 자동으로 읽어서 환경변수로 등록
 load_dotenv()
 
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+router = APIRouter()
+
 openai.api_key = os.getenv("OPENAI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -60,11 +55,21 @@ def extract_title_from_pdf(pdf_path: str) -> str:
 def get_top_n_tfidf_nouns(text, n=30, stopwords=None):
     okt = Okt()
     nouns = [word for word in okt.nouns(text) if len(word) > 1 and (not stopwords or word not in stopwords)]
+    with open("nouns.csv", "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["명사"])
+        for noun in nouns:
+            writer.writerow([noun])
     doc = " ".join(nouns)
     vectorizer = TfidfVectorizer()
     tfidf = vectorizer.fit_transform([doc])
     scores = dict(zip(vectorizer.get_feature_names_out(), tfidf.toarray()[0]))
     top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:n]
+    with open("tfidf_scores.csv", "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["명사", "TF-IDF 점수"])
+        for k, v in top:
+            writer.writerow([k, v])
     return set([k for k, v in top]), dict(scores)
 
 def extract_subtopics_and_keywords_with_llm(text, api_key, n_sub=4, n_kw=12):
@@ -95,6 +100,12 @@ def extract_subtopics_and_keywords_with_llm(text, api_key, n_sub=4, n_kw=12):
         )
         result = response['choices'][0]['message']['content']
         data = json.loads(result)
+        with open("llm_keywords.csv", "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["LLM 개념어"])
+            for subtopic, keywords in data.items():
+                for kw in keywords:
+                    writer.writerow([kw])
         return data
     except Exception as e:
         print(f"LLM 소주제/개념어 추출 오류: {e}")
@@ -266,7 +277,7 @@ def build_subtopic_network(subtopic_dict, main_title, tfidf_nouns, tfidf_scores,
     } for k, v in freq_counter.most_common()]
     return nodes, edges, freq_table
 
-@app.post("/analyze-pdf")
+@router.post("/analyze-pdf")
 async def analyze_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
@@ -334,6 +345,13 @@ async def analyze_pdf(file: UploadFile = File(...)):
                 )
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"네트워크 생성 실패: {str(e)}")
+            
+            with open("final_keywords.csv", "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["최종 개념어"])
+                for subtopic, keywords in filtered_subtopic_dict.items():
+                    for kw in keywords:
+                        writer.writerow([kw])
             
             return {
                 "nodes": nodes,
