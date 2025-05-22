@@ -101,9 +101,4 @@ MIT License
 - `create_database.sql`을 실행하여 데이터베이스를 만들 수 있습니다. (데이터베이스는 수정이 필요할 수 있습니다.)
 - `server.js`에서 모든 API를 관리하고 있으며, 향후 확장성을 위해 분할할 예정입니다.
 
-# Archives
-*.zip
-*.rar
-*.7z
-
  
