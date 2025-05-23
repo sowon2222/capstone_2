@@ -7,7 +7,7 @@ export const authService = {
     formData.append('password', password);
     formData.append('email', email);
 
-    const response = await fetch(`${API_BASE_URL}/register`, {
+    const response = await fetch(`${API_BASE_URL}/api/register`, {
       method: 'POST',
       body: formData,
     });
@@ -22,7 +22,7 @@ export const authService = {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await fetch(`${API_BASE_URL}/login`, {
+    const response = await fetch(`${API_BASE_URL}/api/login`, {
       method: 'POST',
       body: formData
     });

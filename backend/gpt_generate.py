@@ -90,12 +90,17 @@ def generate_quiz(
         parsed = json.loads(content)
         # 난이도 정보도 함께 반환
         parsed["difficulty"] = difficulty
+
+        # 주관식 문제의 경우 correct_answer가 없을 수 있으므로 처리
+        if parsed.get("type") == "주관식" and not parsed.get("correct_answer"):
+            parsed["correct_answer"] = "정답 없음"  # 임시 정답 설정
+
         # DB에 저장 (slide_id, keyword_id 명시적으로 저장)
         question = Question(
             slide_id=slide_id,
             question_type=parsed.get("type"),
             content=parsed.get("question"),
-            answer=parsed.get("correct_answer"),
+            answer=parsed.get("correct_answer") or "정답 없음",  # null 방지
             explanation=parsed.get("explanation"),
             difficulty=difficulty
         )
@@ -261,4 +266,3 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
     except Exception as e:
         print("파싱 실패 content:", content)
         raise HTTPException(status_code=500, detail=f"GPT 문제 생성 실패: {str(e)} / content: {content}")
-

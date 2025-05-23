@@ -41,7 +41,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 # 📦 API 라우터 등록
-app.include_router(user_router)
+app.include_router(user_router, prefix="/api")
 app.include_router(archive_router)
 app.include_router(gpt_router)
 app.include_router(quiz_router)

@@ -46,7 +46,7 @@ async function summarizeWithGPT(text) {
 async function summarizeSlideWithGPT(text) {
     const apiKey = process.env.OPENAI_API_KEY;
     const endpoint = 'https://api.openai.com/v1/chat/completions';
-    const prompt = `아래 슬라이드 텍스트를 분석해서 반드시 아래 형식으로 답변해줘.\n\n[1] 슬라이드 제목(소주제): (간결하게)\n[2] 개념 설명: (한두 문장)\n[3] 주요 키워드: (쉼표로 구분, 예: 키워드1, 키워드2, ...)\n[4] 중요한 문장: (2~3개, 각 문장은 줄바꿈으로 구분)\n[5] 슬라이드 전체 요약: (3~4문장)\n\n예시:\n[1] TCP 연결 과정\n[2] TCP는 신뢰성 있는 데이터 전송을 위해 3-way handshake 과정을 거칩니다.\n[3] TCP, 3-way handshake, 연결, 데이터 전송\n[4] TCP는 신뢰성 있는 연결을 제공합니다.\n3-way handshake는 연결 설정에 사용됩니다.\n[5] TCP 연결은 3-way handshake 과정을 통해 시작되며, 이 과정은 데이터의 신뢰성 있는 전송을 보장합니다. 각 단계는 SYN, SYN-ACK, ACK 패킷을 주고받으며 연결이 성립됩니다.\n\n[슬라이드 텍스트]\n${text}`;
+    const prompt = `아래 슬라이드 텍스트를 분석해서 반드시 아래 형식으로 답변해줘.\n\n[1] 슬라이드 제목(소주제): (간결하게)\n[2] 개념 설명: (학습자가 이해할 수 있을정도로 자세하게게)\n[3] 주요 키워드: (쉼표로 구분, 예: 키워드1, 키워드2, ...)\n[4] 중요한 문장: (2~3개, 각 문장은 줄바꿈으로 구분)\n[5] 슬라이드 전체 요약: (3~4문장)\n\n예시:\n[1] TCP 연결 과정\n[2] TCP는 신뢰성 있는 데이터 전송을 위해 3-way handshake 과정을 거칩니다.\n[3] TCP, 3-way handshake, 연결, 데이터 전송\n[4] TCP는 신뢰성 있는 연결을 제공합니다.\n3-way handshake는 연결 설정에 사용됩니다.\n[5] TCP 연결은 3-way handshake 과정을 통해 시작되며, 이 과정은 데이터의 신뢰성 있는 전송을 보장합니다. 각 단계는 SYN, SYN-ACK, ACK 패킷을 주고받으며 연결이 성립됩니다.\n\n[슬라이드 텍스트]\n${text}`;
     const messages = [
         { role: "system", content: "당신은 학습자가 강의자료를 이해하기 쉽도록 요약해주는 AI입니다." },
         { role: "user", content: prompt }

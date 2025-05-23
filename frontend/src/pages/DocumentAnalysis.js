@@ -3,18 +3,14 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle } from 'react-icons/fa';
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from 'react-router-dom';
 
 // PDF.js 워커 경로를 node_modules에서 직접 지정
 pdfjs.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.js`;
 
-const DUMMY_TOTAL_PAGES = 10;
-const DUMMY_STUDY_TIME = 12; // 분
-const DUMMY_PROBLEM_PAGES = [2, 4, 7]; // 문제 출제된 페이지
-
 const DocumentAnalysis = () => {
   const [file, setFile] = useState(null);
-  const [numPages, setNumPages] = useState(DUMMY_TOTAL_PAGES);
+  const [numPages, setNumPages] = useState(0); // 초기값 0
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPage, setSelectedPage] = useState(1);
   const [analysis, setAnalysis] = useState(null);
@@ -22,74 +18,85 @@ const DocumentAnalysis = () => {
   const [showQuizPrompt, setShowQuizPrompt] = useState(false);
   const [viewedPages, setViewedPages] = useState([1]); // 학습한 페이지
   const [pageTimes, setPageTimes] = useState({}); // 각 페이지별 학습 시간(초)
-  const [summaryResult, setSummaryResult] = useState(null); // 추가: 요약 결과 상태
+  const [materialId, setMaterialId] = useState(null); // material_id 저장용 state 추가
   const fileInputRef = useRef(null);
   const pageViewStart = useRef(Date.now());
+  const analysisStartTime = useRef(null);
   const navigate = useNavigate();
+  const [timer, setTimer] = useState(0);
+  const timerInterval = useRef(null);
+
+  // 타이머 효과
+  useEffect(() => {
+    if (!file) return;
+    setTimer(pageTimes[selectedPage] || 0);
+    const interval = setInterval(() => {
+      setTimer((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line
+  }, [selectedPage, file]);
 
   // 페이지 이동 시 학습 시간 기록
   useEffect(() => {
     if (!file) return;
-    const now = Date.now();
-    setPageTimes(prev => {
-      const prevTime = prev[selectedPage] || 0;
-      const elapsed = Math.floor((now - pageViewStart.current) / 1000);
-      return { ...prev, [selectedPage]: prevTime + elapsed };
-    });
-    pageViewStart.current = now;
+    setPageTimes((prev) => ({
+      ...prev,
+      [selectedPage]: timer,
+    }));
     // eslint-disable-next-line
   }, [selectedPage]);
+
+  // 분석 시작 시 시간 기록
+  useEffect(() => {
+    if (file) {
+      analysisStartTime.current = Date.now();
+    }
+  }, [file]);
+
+  // 학습 시간 저장 함수
+  const saveStudyTime = async () => {
+    if (!analysisStartTime.current) return;
+    const duration = Math.floor((Date.now() - analysisStartTime.current) / 1000); // 초 단위
+    const token = localStorage.getItem('token');
+    if (duration > 0 && token) {
+      await fetch('http://localhost:3000/api/study-time', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ duration })
+      });
+    }
+    analysisStartTime.current = null; // 초기화
+  };
 
   // 진도율 계산
   const progress = Math.round((viewedPages.length / numPages) * 100);
 
   const onFileChange = async (event) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      // 로그인 페이지로 이동
-      navigate('/login');
-      return;
-    }
     const selectedFile = event.target.files[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
       const formData = new FormData();
-      formData.append("pdf", selectedFile);
+      formData.append('pdf', selectedFile);
 
+      const token = localStorage.getItem('token');
       try {
-        // 1. 파일 업로드 (엔드포인트만 바꿈)
-        const res = await fetch("http://localhost:3000/api/upload", {
-          method: "POST",
-          body: formData,
+        const uploadRes = await fetch('http://localhost:3000/api/upload', {
+          method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
-          }
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
         });
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.detail || "서버 오류가 발생했습니다.");
-        }
-        const data = await res.json();
-        const materialId = data.material_id;
-        setNumPages(data.total_pages);
 
-        // 2. 첫 슬라이드 요약 요청
-        const summaryRes = await fetch(`http://localhost:3000/archive/${materialId}/slide/1/summary`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          }
-        });
-        if (!summaryRes.ok) {
-          const errorData = await summaryRes.json();
-          throw new Error(errorData.detail || "슬라이드 요약 실패");
-        }
-        const summaryData = await summaryRes.json();
+        if (!uploadRes.ok) throw new Error('파일 업로드 실패');
 
-        // 3. summaryData를 상태에 저장해서 화면에 표시
-        setSummaryResult(summaryData);
+        const { material_id, total_pages } = await uploadRes.json();
+        setMaterialId(material_id);
+        setNumPages(total_pages); // 서버에서 받은 실제 페이지 수로 세팅
 
-        // 기존 PDF 뷰어 등 로직도 필요하면 아래 코드 유지
         setFile(selectedFile);
         setCurrentPage(1);
         setSelectedPage(1);
@@ -97,7 +104,8 @@ const DocumentAnalysis = () => {
         setViewedPages([1]);
         setPageTimes({});
       } catch (err) {
-        alert(err.message || "업로드/요약 중 오류가 발생했습니다.");
+        console.error('Upload error:', err);
+        alert('파일 업로드 중 오류가 발생했습니다.');
       }
     } else {
       alert('PDF 파일만 업로드 가능합니다.');
@@ -108,18 +116,55 @@ const DocumentAnalysis = () => {
     setNumPages(numPages);
   };
 
-  const handlePageSelect = (pageNumber) => {
+  const handlePageSelect = async (pageNumber) => {
+    if (!materialId) {
+      alert('강의자료가 업로드되지 않았습니다.');
+      return;
+    }
+
+    // 이전 페이지 학습 시간 저장
+    setPageTimes(prev => ({
+      ...prev,
+      [selectedPage]: timer,
+    }));
+    stopTimer(); // 타이머 정지
+
     setSelectedPage(pageNumber);
     setCurrentPage(pageNumber);
     setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
     setLoading(true);
-    setTimeout(() => {
-      setAnalysis({
-        summary: `페이지 ${pageNumber}의 요약 내용입니다.`,
-        explanation: `페이지 ${pageNumber}의 상세 설명입니다.`
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:3000/archive/${materialId}/slide/${pageNumber}/summary`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
+
+      if (!res.ok) throw new Error('슬라이드 요약을 불러오지 못했습니다.');
+      
+      const data = await res.json();
+      const { slide } = data;
+
+      setAnalysis({
+        summary: slide.summary,
+        explanation: slide.concept_explanation,
+        slide_title: slide.slide_title,
+        main_keywords: slide.main_keywords,
+        important_sentences: slide.important_sentences,
+        image_url: slide.image_url
+      });
+
+      setTimer(pageTimes[pageNumber] || 0); // 이전에 학습한 시간 있으면 불러오기, 없으면 0
+      startTimer(); // 요약 응답 후 타이머 시작
+    } catch (err) {
+      console.error('Error:', err);
+      alert('슬라이드 요약을 불러오는 중 오류가 발생했습니다.');
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   const handleScroll = (e) => {
@@ -129,34 +174,76 @@ const DocumentAnalysis = () => {
     }
   };
 
-  const handleQuizStart = () => {
-    // TODO: 문제풀기 페이지로 이동
-    console.log('문제풀기 시작');
+  const handleQuizStart = async () => {
+    if (!materialId) {
+      alert('강의자료가 업로드되지 않았습니다.');
+      return;
+    }
+
+    await saveStudyTime();
+    const token = localStorage.getItem('token');
+    
+    try {
+      // 슬라이드 리스트 불러오기
+      const res = await fetch(`http://localhost:3000/slides/material/${materialId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!res.ok) throw new Error('슬라이드 정보를 불러오지 못했습니다.');
+      
+      const slides = await res.json();
+      if (!slides || slides.length === 0) {
+        alert('해당 강의자료에 슬라이드가 없습니다.');
+        return;
+      }
+
+      // 문제풀이 페이지로 슬라이드 리스트 넘기기
+      navigate('/problem-solving', { state: { slides, materialId } });
+    } catch (err) {
+      console.error('Error:', err);
+      alert('문제풀기를 시작할 수 없습니다: ' + err.message);
+    }
   };
 
-  // 전체 학습 시간(더미)
-  const totalStudyTime = DUMMY_STUDY_TIME;
+  // 전체 학습 시간(분)
+  const totalStudyTime = Math.floor(
+    Object.values(pageTimes).reduce((a, b) => a + (b || 0), 0) / 60
+  );
   // 현재 페이지 학습 시간(더미)
-  const currentPageTime = pageTimes[selectedPage] || 0;
+  const currentPageTime = timer;
   // 문제 출제 여부
-  const hasProblem = DUMMY_PROBLEM_PAGES.includes(selectedPage);
+  const hasProblem = false; // 더미 데이터 제거
+
+  useEffect(() => {
+    if (file && materialId) {
+      handlePageSelect(1);
+    }
+    // eslint-disable-next-line
+  }, [file, materialId]);
+
+  const startTimer = () => {
+    if (timerInterval.current) clearInterval(timerInterval.current);
+    timerInterval.current = setInterval(() => {
+      setTimer(prev => prev + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
+      timerInterval.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopTimer();
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#18181b]">
       <div className="max-w-7xl mx-auto px-2 py-8">
-        {/* 요약 결과를 가장 위에 표시 */}
-        {summaryResult && (
-          <div className="bg-[#23232a] rounded-xl p-6 mb-6 text-white">
-            <h2 className="text-xl font-bold mb-2">
-              {summaryResult.slide?.slide_title || "슬라이드 제목 없음"}
-              <span className="ml-3 text-base font-normal text-[#bbbbbb]">
-                (1 / {numPages} 페이지)
-              </span>
-            </h2>
-            <div>요약: {summaryResult.slide?.summary}</div>
-          </div>
-        )}
-
         {!file ? (
           <div className="flex flex-col items-center justify-center h-[70vh]">
             <button
@@ -178,13 +265,15 @@ const DocumentAnalysis = () => {
             {/* 좌측 영역 - 썸네일/페이지 리스트 */}
             <div className="w-1/12 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-w-[60px] min-h-[500px] overflow-y-auto hide-scrollbar">
               <div className="mb-4 w-full">
-                <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto hide-scrollbar">
+                <div className="flex flex-col gap-2 max-h-[calc(70vh-100px)] overflow-y-auto custom-scrollbar">
                   {Array.from({ length: numPages }, (_, i) => i + 1).map((page) => (
                     <button
                       key={page}
-                      onClick={() => handlePageSelect(page)}
+                      onClick={() => !loading && handlePageSelect(page)}
+                      disabled={loading}
                       className={`flex items-center justify-center px-0 py-2 rounded-lg border transition-all w-full
                         ${selectedPage === page ? 'border-[#346aff] bg-[#18181b] font-bold text-[#346aff] shadow' : 'border-[#23232a] bg-[#23232a] text-[#bbbbbb] hover:bg-[#18181b]'}
+                        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
                       `}
                     >
                       <span>{page}</span>
@@ -210,18 +299,20 @@ const DocumentAnalysis = () => {
               </div>
             </div>
 
-            {/* 중앙 - PDF 뷰어 */}
+            {/* 중앙 - 슬라이드 이미지 뷰어 */}
             <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-h-[500px] overflow-y-auto">
               <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
-              <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar" onScroll={handleScroll}>
-                {summaryResult && summaryResult.slide && summaryResult.slide.image_url ? (
+              <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar">
+                {analysis && analysis.image_url ? (
                   <img
-                    src={`http://localhost:3000${summaryResult.slide.image_url}`}
-                    alt="슬라이드 이미지"
-                    style={{ maxWidth: '100%', maxHeight: '500px', margin: '0 auto' }}
+                    src={`http://localhost:3000${analysis.image_url}`}
+                    alt={`슬라이드 ${selectedPage} 이미지`}
+                    style={{ maxWidth: '100%', maxHeight: '600px', borderRadius: '12px' }}
                   />
                 ) : (
-                  <div>슬라이드 이미지가 없습니다.</div>
+                  <div className="text-[#bbbbbb] text-center w-full h-full flex items-center justify-center">
+                    슬라이드 이미지를 불러오는 중이거나, 아직 분석 결과가 없습니다.
+                  </div>
                 )}
               </div>
             </div>
@@ -244,66 +335,69 @@ const DocumentAnalysis = () => {
               <div className="mb-2 text-xs text-[#bbbbbb]">이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초</div>
               <h2 className="text-lg font-bold mb-2 text-white">분석 결과</h2>
               {loading ? (
-                <div className="flex items-center justify-center h-40">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#346aff]"></div>
+                <div className="flex flex-col items-center justify-center h-40">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#346aff] mb-2"></div>
+                  <div className="text-[#bbbbbb] mt-2">요약 생성 중...</div>
                 </div>
-              ) : summaryResult && summaryResult.slide ? (
+              ) : analysis ? (
                 <div className="space-y-3">
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">슬라이드 제목</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.slide_title}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.concept_explanation}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.main_keywords}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.important_sentences}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">요약</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.summary}</p>
-                  </div>
+                  {analysis.slide_title && (
+                    <div>
+                      <h3 className="font-semibold mb-1 text-white">제목</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.slide_title}</p>
+                    </div>
+                  )}
+                  {analysis.summary && (
+                    <div>
+                      <h3 className="font-semibold mb-1 text-white">요약</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
+                    </div>
+                  )}
+                  {analysis.explanation && (
+                    <div>
+                      <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.explanation}</p>
+                    </div>
+                  )}
+                  {analysis.main_keywords && typeof analysis.main_keywords === 'string' && (
+                    <div>
+                      <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.main_keywords.split(',')
+                          .filter(keyword => keyword.trim())
+                          .map((keyword, idx) => (
+                            <span key={idx} className="px-2 py-1 rounded-full text-sm bg-blue-900/30 text-blue-400">
+                              {keyword.trim()}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  {analysis.important_sentences && (
+                    <div>
+                      <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
+                      <p className="text-[#bbbbbb] text-sm whitespace-pre-line">{analysis.important_sentences}</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-[#bbbbbb]">페이지를 선택하면 분석 결과가 표시됩니다.</p>
               )}
-              {/* 우측에서도 페이지 이동 */}
-              <div className="flex gap-2 mt-6">
-                <button
-                  onClick={() => handlePageSelect(Math.max(selectedPage - 1, 1))}
-                  disabled={selectedPage <= 1}
-                  className="flex-1 flex items-center justify-center px-2 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
-                >
-                  <FaChevronLeft />
-                </button>
-                <button
-                  onClick={() => handlePageSelect(Math.min(selectedPage + 1, numPages))}
-                  disabled={selectedPage >= numPages}
-                  className="flex-1 flex items-center justify-center px-2 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
-                >
-                  <FaChevronRight />
-                </button>
-              </div>
             </div>
           </div>
         )}
 
-        {/* 문제풀기 프롬프트 */}
-        {showQuizPrompt && (
-          <div className="fixed bottom-0 left-0 right-0 bg-[#23232a] shadow-lg p-4 z-50">
-            <div className="max-w-7xl mx-auto flex justify-between items-center">
-              <p className="text-lg text-white">이 자료를 기반으로 문제를 풀어보시겠습니까?</p>
+        {file && (
+          <div className="fixed left-0 right-0 bottom-0 bg-[#23232a] shadow-lg z-50 py-4">
+            <div className="max-w-3xl mx-auto flex items-center justify-between px-6">
+              <span className="text-lg text-white font-semibold">
+                이 자료를 기반으로 문제를 풀어보시겠습니까?
+              </span>
               <button
                 onClick={handleQuizStart}
-                className="px-6 py-2 bg-[#22c55e] text-white rounded-lg hover:bg-[#16a34a] transition-colors font-bold"
+                className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg shadow-lg hover:bg-[#16a34a] transition"
               >
-                문제풀기 시작
+                기출문제 풀러가기
               </button>
             </div>
           </div>

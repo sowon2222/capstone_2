@@ -34,24 +34,6 @@ const pool = mariadb.createPool({
     connectionLimit: 5
 });
 
-// JWT 토큰 검증 미들웨어
-const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ error: '인증 토큰이 필요합니다.' });
-    }
-
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        console.log('Decoded JWT:', user);
-        if (err) {
-            return res.status(403).json({ error: '유효하지 않은 토큰입니다.' });
-        }
-        req.user = user;
-        next();
-    });
-};
 
 // 업로드 폴더 설정
 const storage = multer.diskStorage({
@@ -146,11 +128,11 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).json({ error: '사용자 이름 또는 비밀번호가 올바르지 않습니다.' });
         }
         
-        // JWT 토큰 생성
+        // JWT 토큰 생성 (FastAPI와 동일하게)
         const token = jwt.sign(
-            { userId: user.user_id, username: user.username },
-            'your-secret-key',
-            { expiresIn: '24h' }
+            { user_id: user.user_id, username: user.username },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h', algorithm: 'HS256' }
         );
         
         res.json({
@@ -172,32 +154,23 @@ app.post('/api/login', async (req, res) => {
 
 */ 
 
-// 사용자 정보 조회 API (토큰 필요)
-app.get('/api/profile', authenticateToken, async (req, res) => {
-    let conn;
-    try {
-        conn = await pool.getConnection();
-        
-        const users = await conn.query(
-            'SELECT user_id, username FROM users WHERE user_id = ?',
-            [req.user.user_id]
-        );
-        
-        if (users.length === 0) {
-            return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+const JWT_SECRET = process.env.JWT_SECRET;
+
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: '인증 토큰이 필요합니다.' });
+
+    jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }, (err, user) => {
+        if (err) {
+            console.error('JWT 검증 실패:', err);
+            return res.status(403).json({ error: '유효하지 않은 토큰입니다.' });
         }
-        
-        res.json({
-            user: users[0]
-        });
-        
-    } catch (err) {
-        console.error('프로필 조회 중 오류:', err);
-        res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-    } finally {
-        if (conn) conn.release();
-    }
-});
+        console.log('디코딩된 JWT payload:', user);
+        req.user = user;
+        next();
+    });
+};
 
 // PDF 업로드 및 페이지 수 계산 API
 app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res) => {
@@ -238,8 +211,8 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
 
 // 사용자 업로드 자료 리스트 (제목만)
 app.get('/archive/list', authenticateToken, async (req, res) => {
+    const userId = req.user.user_id;
     try {
-        const userId = req.user.user_id;
         const results = await pool.query(
             'SELECT material_id, material_name, page, progress FROM lecture_materials WHERE user_id = ? ORDER BY material_id DESC',
             [userId]
@@ -265,7 +238,11 @@ app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
             'SELECT slide_number, original_text, summary FROM slides WHERE material_id = ? ORDER BY slide_number',
             [materialId]
         );
-        res.json({ slides });
+        res.json({ slides: (slides || []).map(s => ({
+            slide_number: s.slide_number,
+            original_text: s.original_text,
+            summary: s.summary
+        })) });
     } catch (err) {
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
     }
@@ -629,6 +606,37 @@ app.post('/api/study-time', authenticateToken, async (req, res) => {
     }
 });
 
+// 특정 강의자료의 슬라이드 리스트 반환
+app.get('/slides/material/:material_id', authenticateToken, async (req, res) => {
+    const materialId = req.params.material_id;
+    try {
+        const slides = await pool.query(
+            'SELECT * FROM slides WHERE material_id = ? ORDER BY slide_number',
+            [materialId]
+        );
+        res.json(slides);
+    } catch (err) {
+        res.status(500).json({ error: '슬라이드 리스트 조회 오류' });
+    }
+});
+
+// 특정 슬라이드에 연결된 키워드 리스트 반환
+app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
+    const slideId = req.params.slide_id;
+    try {
+        const keywords = await pool.query(
+            `SELECT k.keyword_id, k.keyword_name
+             FROM slide_keywords sk
+             JOIN keywords k ON sk.keyword_id = k.keyword_id
+             WHERE sk.slide_id = ?`,
+            [slideId]
+        );
+        res.json(keywords);
+    } catch (err) {
+        res.status(500).json({ error: '키워드 리스트 조회 오류' });
+    }
+});
+
 // 서버 시작
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
@@ -651,4 +659,6 @@ const server = app.listen(PORT, () => {
             });
         }
     });
+
+    console.log('JWT_SECRET:', process.env.JWT_SECRET);
 }); 

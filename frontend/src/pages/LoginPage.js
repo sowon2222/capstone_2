@@ -24,7 +24,7 @@ export default function LoginPage() {
       formData.append("username", id);
       formData.append("password", password);
 
-      const response = await fetch("http://localhost:8000/login", {
+      const response = await fetch("http://localhost:8000/api/login", {
         method: "POST",
         body: formData,
       });
@@ -34,6 +34,7 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
+      console.log('로그인 응답:', data);
       
       // API 명세서의 응답 형식에 맞춰 처리
       const userData = {
