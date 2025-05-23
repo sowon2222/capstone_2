@@ -11,11 +11,17 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 @router.post("/register")
-def register(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+def register(
+    username: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(None),
+    email: str = Form(None),
+    db: Session = Depends(get_db)
+):
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="User already exists.")
     hashed_pw = pwd_context.hash(password)
-    user = User(username=username, password=hashed_pw)
+    user = User(username=username, password=hashed_pw, email=email)
     db.add(user)
     db.commit()
     db.refresh(user)
