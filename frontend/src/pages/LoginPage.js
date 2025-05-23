@@ -4,6 +4,7 @@ import { Button } from "../components/common/Button";
 import { Card, CardContent } from "../components/common/Card";
 import { Input } from "../components/common/Input";
 import { useAuth } from "../contexts/AuthContext";
+import { authService } from '../services/authService'; // 또는 '../../services/authService' 경로 맞추기
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -19,14 +20,8 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // TODO: 백엔드 API 호출
-      // 로그인 성공 시 토큰 발급
-      // 로그인 살패 시 오류 메시지 반환
-      
-      // const userData = await response.json();
-      const userData = { id, name: "테스트 사용자" }; // 임시 데이터
-      
-      await login(userData);
+      const result = await authService.login(id, password);
+      await login(result);
       navigate("/");
     } catch (error) {
       setError(error.message || "로그인 중 오류가 발생했습니다.");

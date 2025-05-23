@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle } from 'react-icons/fa';
+import { archiveService } from '../services/archiveService';
 
 // PDF.js 워커 경로를 node_modules에서 직접 지정
 pdfjs.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.js`;
@@ -40,7 +41,7 @@ const DocumentAnalysis = () => {
   // 진도율 계산
   const progress = Math.round((viewedPages.length / numPages) * 100);
 
-  const onFileChange = (event) => {
+  const onFileChange = async (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
       setFile(selectedFile);
@@ -49,6 +50,27 @@ const DocumentAnalysis = () => {
       setAnalysis(null);
       setViewedPages([1]);
       setPageTimes({});
+      try {
+        setLoading(true);
+        // 토큰 가져오기
+        const token = localStorage.getItem('token');
+        // PDF 업로드
+        const { material_id, total_pages } = await archiveService.uploadPDF(selectedFile, token);
+        setNumPages(total_pages);
+
+        // 첫 슬라이드 요약 가져오기
+        const { slides } = await archiveService.getMaterialDetail(material_id, token);
+        if (slides && slides.length > 0) {
+          setAnalysis({
+            summary: slides[0].summary,
+            explanation: slides[0].original_text
+          });
+        }
+      } catch (error) {
+        alert('문서 분석 중 오류가 발생했습니다.');
+      } finally {
+        setLoading(false);
+      }
     } else {
       alert('PDF 파일만 업로드 가능합니다.');
     }

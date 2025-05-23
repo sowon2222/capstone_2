@@ -32,13 +32,13 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const userData = {
-        username: formData.id,      // 아이디
-        password: formData.password, // 비밀번호
-        email: formData.email        // 이메일
-      };
-      await authService.register(userData);
-      await login(userData);
+      const result = await authService.register(
+        formData.id,
+        formData.password,
+        formData.name,
+        formData.email
+      );
+      await login(formData.id, formData.password);
       navigate("/");
     } catch (error) {
       setError(error.message || "회원가입 중 오류가 발생했습니다.");

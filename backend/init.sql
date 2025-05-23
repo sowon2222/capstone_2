@@ -10,6 +10,7 @@ CREATE TABLE `users` (
   `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
   `email` varchar(255) DEFAULT NULL,
+  `name` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`user_id`),
   UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
@@ -164,3 +165,6 @@ SELECT
 FROM `weak_keyword_logs` 
 WHERE `weak_keyword_logs`.`is_incorrect` = 1 
 GROUP BY `weak_keyword_logs`.`user_id`,`weak_keyword_logs`.`keyword_id`; 
+
+ALTER TABLE users ADD COLUMN name VARCHAR(255) DEFAULT NULL;
+ALTER TABLE users ADD COLUMN email VARCHAR(255) DEFAULT NULL;

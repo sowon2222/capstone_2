@@ -1,25 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/auth';
+import { authService } from '../services/authService';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState(localStorage.getItem('token'));
 
-  useEffect(() => {
-    // 로컬 스토리지에서 사용자 정보 복원
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setIsAuthenticated(true);
-    }
-  }, []);
-
-  const login = async (userData) => {
-    setUser(userData);
-    setIsAuthenticated(true);
-    localStorage.setItem('user', JSON.stringify(userData));
+  const login = async (username, password) => {
+    const result = await authService.login(username, password);
+    setToken(result.access_token);
+    setUser({ id: result.user_id, username: result.username });
+    localStorage.setItem('token', result.access_token);
+    return result;
   };
 
   const logout = async () => {
@@ -29,14 +22,14 @@ export const AuthProvider = ({ children }) => {
       console.error('로그아웃 중 오류:', error);
     } finally {
       setUser(null);
-      setIsAuthenticated(false);
-      localStorage.removeItem('user');
+      setToken(null);
+      localStorage.removeItem('token');
     }
   };
 
   const value = {
     user,
-    isAuthenticated,
+    token,
     login,
     logout
   };
