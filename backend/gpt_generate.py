@@ -9,6 +9,7 @@ import openai, json, re
 from typing import List, Optional
 from sqlalchemy import text
 import random
+import os
 
 router = APIRouter()
 
@@ -75,8 +76,8 @@ def generate_quiz(
 
 위 기준에 맞춰 대학생 수준의 기출 문제를 생성해줘. 문제 유형은 객관식, 주관식, 참/거짓, 빈칸 채우기 중 하나를 선택해서 아래 JSON 형식으로 정확히 출력해줘:\n\n예시 (객관식):\n{{\n  "type": "객관식",\n  "question": "...",\n  "options": {{ "A": "...", "B": "...", "C": "...", "D": "..." }},\n  "correct_answer": "A",\n  "explanation": "...",\n  "tags": ["..."]\n}}\n"""
     try:
-        client = openai.OpenAI(api_key="API_KEY")
-        response = client.chat.completions.create(
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "너는 대학 강의 기반 문제 생성 AI야."},
@@ -84,7 +85,7 @@ def generate_quiz(
             ],
             temperature=0.7
         )
-        content = response.choices[0].message.content
+        content = response.choices[0].message['content']
         content = re.sub(r"^```json\\s*|\\s*```$", "", content.strip(), flags=re.MULTILINE)
         parsed = json.loads(content)
         # 난이도 정보도 함께 반환
@@ -92,7 +93,6 @@ def generate_quiz(
         # DB에 저장 (slide_id, keyword_id 명시적으로 저장)
         question = Question(
             slide_id=slide_id,
-            keyword_id=keyword_id,
             question_type=parsed.get("type"),
             content=parsed.get("question"),
             answer=parsed.get("correct_answer"),
@@ -103,8 +103,18 @@ def generate_quiz(
         db.commit()
         db.refresh(question)
         parsed["question_id"] = question.question_id
+
+        # 만약 keyword_id가 있다면 question_keywords 테이블에 추가
+        if keyword_id:
+            db.execute(
+                text("INSERT INTO question_keywords (question_id, keyword_id) VALUES (:qid, :kid)"),
+                {"qid": question.question_id, "kid": keyword_id}
+            )
+            db.commit()
+
         return parsed
     except Exception as e:
+        print("문제 생성 에러:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -116,7 +126,6 @@ def get_all_questions(db: Session = Depends(get_db)):
         {
             "question_id": q.question_id,
             "slide_id": q.slide_id,
-            "keyword_id": q.keyword_id,
             "type": q.question_type,
             "content": q.content,
             "answer": q.answer,
@@ -212,8 +221,8 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
 
     # 4. GPT 호출 (openai 라이브러리 사용)
     try:
-        client = openai.OpenAI(api_key="API KEY")
-        response = client.chat.completions.create(
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "너는 대학 강의 기반 문제 생성 AI야."},
@@ -221,7 +230,7 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
             ],
             temperature=0.7
         )
-        content = response.choices[0].message.content
+        content = response.choices[0].message['content']
         print("GPT 응답:", content)  # 디버깅용
         content = re.sub(r"^```json\\s*|\\s*```$|^```|```$", "", content.strip(), flags=re.MULTILINE)
         parsed = json.loads(content)
@@ -229,7 +238,6 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
         # DB에 저장 (slide_id는 None, keyword_id는 약점 키워드 중 첫 번째)
         question = Question(
             slide_id=None,
-            keyword_id=keyword_ids[0] if keyword_ids else None,
             question_type=parsed.get("type"),
             content=parsed.get("question"),
             answer=parsed.get("correct_answer"),
@@ -240,6 +248,15 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
         db.commit()
         db.refresh(question)
         parsed["question_id"] = question.question_id
+
+        # 만약 keyword_id가 있다면 question_keywords 테이블에 추가
+        if keyword_ids:
+            db.execute(
+                text("INSERT INTO question_keywords (question_id, keyword_id) VALUES (:qid, :kid)"),
+                {"qid": question.question_id, "kid": keyword_ids[0]}
+            )
+            db.commit()
+
         return parsed
     except Exception as e:
         print("파싱 실패 content:", content)

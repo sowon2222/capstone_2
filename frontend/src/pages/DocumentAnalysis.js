@@ -3,7 +3,6 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle } from 'react-icons/fa';
-import { useNavigate } from "react-router-dom";
 
 // PDF.js 워커 경로를 node_modules에서 직접 지정
 pdfjs.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.js`;
@@ -22,10 +21,8 @@ const DocumentAnalysis = () => {
   const [showQuizPrompt, setShowQuizPrompt] = useState(false);
   const [viewedPages, setViewedPages] = useState([1]); // 학습한 페이지
   const [pageTimes, setPageTimes] = useState({}); // 각 페이지별 학습 시간(초)
-  const [summaryResult, setSummaryResult] = useState(null); // 추가: 요약 결과 상태
   const fileInputRef = useRef(null);
   const pageViewStart = useRef(Date.now());
-  const navigate = useNavigate();
 
   // 페이지 이동 시 학습 시간 기록
   useEffect(() => {
@@ -43,62 +40,15 @@ const DocumentAnalysis = () => {
   // 진도율 계산
   const progress = Math.round((viewedPages.length / numPages) * 100);
 
-  const onFileChange = async (event) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      // 로그인 페이지로 이동
-      navigate('/login');
-      return;
-    }
+  const onFileChange = (event) => {
     const selectedFile = event.target.files[0];
     if (selectedFile && selectedFile.type === 'application/pdf') {
-      const formData = new FormData();
-      formData.append("pdf", selectedFile);
-
-      try {
-        // 1. 파일 업로드 (엔드포인트만 바꿈)
-        const res = await fetch("http://localhost:3000/api/upload", {
-          method: "POST",
-          body: formData,
-          headers: {
-            Authorization: `Bearer ${token}`,
-          }
-        });
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.detail || "서버 오류가 발생했습니다.");
-        }
-        const data = await res.json();
-        const materialId = data.material_id;
-        setNumPages(data.total_pages);
-
-        // 2. 첫 슬라이드 요약 요청
-        const summaryRes = await fetch(`http://localhost:3000/archive/${materialId}/slide/1/summary`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          }
-        });
-        if (!summaryRes.ok) {
-          const errorData = await summaryRes.json();
-          throw new Error(errorData.detail || "슬라이드 요약 실패");
-        }
-        const summaryData = await summaryRes.json();
-
-        // 3. summaryData를 상태에 저장해서 화면에 표시
-        setSummaryResult(summaryData);
-
-        // 기존 PDF 뷰어 등 로직도 필요하면 아래 코드 유지
-        setFile(selectedFile);
-        setCurrentPage(1);
-        setSelectedPage(1);
-        setAnalysis(null);
-        setViewedPages([1]);
-        setPageTimes({});
-      } catch (err) {
-        alert(err.message || "업로드/요약 중 오류가 발생했습니다.");
-      }
+      setFile(selectedFile);
+      setCurrentPage(1);
+      setSelectedPage(1);
+      setAnalysis(null);
+      setViewedPages([1]);
+      setPageTimes({});
     } else {
       alert('PDF 파일만 업로드 가능합니다.');
     }
@@ -144,19 +94,6 @@ const DocumentAnalysis = () => {
   return (
     <div className="min-h-screen bg-[#18181b]">
       <div className="max-w-7xl mx-auto px-2 py-8">
-        {/* 요약 결과를 가장 위에 표시 */}
-        {summaryResult && (
-          <div className="bg-[#23232a] rounded-xl p-6 mb-6 text-white">
-            <h2 className="text-xl font-bold mb-2">
-              {summaryResult.slide?.slide_title || "슬라이드 제목 없음"}
-              <span className="ml-3 text-base font-normal text-[#bbbbbb]">
-                (1 / {numPages} 페이지)
-              </span>
-            </h2>
-            <div>요약: {summaryResult.slide?.summary}</div>
-          </div>
-        )}
-
         {!file ? (
           <div className="flex flex-col items-center justify-center h-[70vh]">
             <button
@@ -214,15 +151,18 @@ const DocumentAnalysis = () => {
             <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-h-[500px] overflow-y-auto">
               <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
               <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar" onScroll={handleScroll}>
-                {summaryResult && summaryResult.slide && summaryResult.slide.image_url ? (
-                  <img
-                    src={`http://localhost:3000${summaryResult.slide.image_url}`}
-                    alt="슬라이드 이미지"
-                    style={{ maxWidth: '100%', maxHeight: '500px', margin: '0 auto' }}
+                <Document
+                  file={file}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  className="flex flex-col items-center"
+                >
+                  <Page
+                    pageNumber={selectedPage}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    className="mb-4"
                   />
-                ) : (
-                  <div>슬라이드 이미지가 없습니다.</div>
-                )}
+                </Document>
               </div>
             </div>
 
@@ -247,27 +187,15 @@ const DocumentAnalysis = () => {
                 <div className="flex items-center justify-center h-40">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#346aff]"></div>
                 </div>
-              ) : summaryResult && summaryResult.slide ? (
+              ) : analysis ? (
                 <div className="space-y-3">
                   <div>
-                    <h3 className="font-semibold mb-1 text-white">슬라이드 제목</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.slide_title}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.concept_explanation}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.main_keywords}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.important_sentences}</p>
-                  </div>
-                  <div>
                     <h3 className="font-semibold mb-1 text-white">요약</h3>
-                    <p className="text-[#bbbbbb] text-sm">{summaryResult.slide.summary}</p>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">상세 설명</h3>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.explanation}</p>
                   </div>
                 </div>
               ) : (

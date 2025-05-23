@@ -629,6 +629,37 @@ app.post('/api/study-time', authenticateToken, async (req, res) => {
     }
 });
 
+// 특정 강의자료의 슬라이드 리스트 반환
+app.get('/slides/material/:material_id', authenticateToken, async (req, res) => {
+    const materialId = req.params.material_id;
+    try {
+        const slides = await pool.query(
+            'SELECT * FROM slides WHERE material_id = ? ORDER BY slide_number',
+            [materialId]
+        );
+        res.json(slides);
+    } catch (err) {
+        res.status(500).json({ error: '슬라이드 리스트 조회 오류' });
+    }
+});
+
+// 특정 슬라이드에 연결된 키워드 리스트 반환
+app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
+    const slideId = req.params.slide_id;
+    try {
+        const keywords = await pool.query(
+            `SELECT k.keyword_id, k.keyword_name
+             FROM slide_keywords sk
+             JOIN keywords k ON sk.keyword_id = k.keyword_id
+             WHERE sk.slide_id = ?`,
+            [slideId]
+        );
+        res.json(keywords);
+    } catch (err) {
+        res.status(500).json({ error: '키워드 리스트 조회 오류' });
+    }
+});
+
 // 서버 시작
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
