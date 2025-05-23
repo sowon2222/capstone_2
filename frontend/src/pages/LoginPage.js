@@ -19,12 +19,31 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // TODO: 백엔드 API 호출
-      // 로그인 성공 시 토큰 발급
-      // 로그인 살패 시 오류 메시지 반환
+      // FormData 생성
+      const formData = new FormData();
+      formData.append("username", id);
+      formData.append("password", password);
+
+      const response = await fetch("http://localhost:8000/login", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
+      }
+
+      const data = await response.json();
       
-      // const userData = await response.json();
-      const userData = { id, name: "테스트 사용자" }; // 임시 데이터
+      // API 명세서의 응답 형식에 맞춰 처리
+      const userData = {
+        id: data.user_id,
+        username: data.username,
+        token: data.access_token
+      };
+
+      // 토큰을 localStorage에 저장
+      localStorage.setItem('token', data.access_token);
       
       await login(userData);
       navigate("/");

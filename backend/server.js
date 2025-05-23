@@ -22,6 +22,7 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // <-- 여기 부분에 프론트랑 연결 --> app.use(express.static('public')); 이었던 곳임 
 
 // MariaDB 연결 풀 설정
@@ -361,7 +362,7 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         }
 
         // 이미지 파일 삭제
-        fs.unlinkSync(imagePath);
+        //fs.unlinkSync(imagePath);
 
         // 진도율 계산
         const [totalSlides] = await pool.query(
@@ -412,7 +413,13 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
             console.log(`[INSERT] study_progress_log: user_id=${req.user.user_id}, material_id=${materialId}, date=${today}, progress=${progress}`);
         }
 
-        res.json({
+        // BigInt를 문자열로 변환
+        function replacer(key, value) {
+            return typeof value === 'bigint' ? value.toString() : value;
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
             slide: {
                 id: slideId.toString(),
                 slide_number: slideNumber,
@@ -421,11 +428,12 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
                 concept_explanation: gptResult.concept_explanation,
                 main_keywords: gptResult.main_keywords,
                 important_sentences: gptResult.important_sentences,
-                summary: gptResult.summary
+                summary: gptResult.summary,
+                image_url: `/uploads/${path.basename(imagePath)}`
             },
             slide_id: slideId,
             main_keywords: mainKeywordsArr
-        });
+        }, replacer));
     } catch (err) {
         console.error('슬라이드 요약 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 오류' });
