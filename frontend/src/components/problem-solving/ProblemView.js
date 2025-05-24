@@ -1,6 +1,7 @@
 //문제 풀이 페이지 메인 컴포넌트
 //선택된 강의자료의 문제 목록 표시, 문제 풀이 진행 상황 표시
 //문제 풀이 결과 제출 및 다음 문제 이동 기능 제공
+
 import React, { useState, useEffect } from 'react';
 import Timer from '../common/Timer';
 

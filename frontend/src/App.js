@@ -13,6 +13,7 @@ import WrongAnswerNote from "./components/problem-solving/WrongAnswerNote";
 import AdditionalPractice from "./components/problem-solving/AdditionalPractice";
 import { AuthProvider } from "./contexts/AuthContext";
 import { AnalysisProvider } from "./contexts/AnalysisContext";
+import ReportProfile from "./pages/ReportProfile";
 
 function App() {
   const [nodes, setNodes] = useState([]);
@@ -21,6 +22,7 @@ function App() {
   const [mainTitle, setMainTitle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [userId, setUserId] = useState(null);
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -75,6 +77,7 @@ function App() {
               <Route path="/archive" element={<ArchivePage />} />
               <Route path="/wrong-answers" element={<WrongAnswerNote />} />
               <Route path="/additional-practice" element={<AdditionalPractice />} />
+              <Route path="/profile" element={<ReportProfile userId={1} />} />
             </Route>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />

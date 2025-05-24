@@ -12,6 +12,7 @@ from database import get_db
 from models import LectureMaterial
 import shutil, os
 import pdfplumber
+from report_api import router as report_router
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -54,6 +55,7 @@ app.include_router(user_router)
 app.include_router(archive_router)
 app.include_router(gpt_router)
 app.include_router(quiz_router)
+app.include_router(report_router)
 
 # 👇 이 부분 추가!
 app.add_middleware(
