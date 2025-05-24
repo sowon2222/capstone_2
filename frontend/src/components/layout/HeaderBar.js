@@ -1,6 +1,6 @@
 // frontend/src/components/layout/HeaderBar.js
 import React, { useEffect, useState } from 'react';
-import { LogIn, UserPlus, Home, FileText, BookOpen, Archive, LogOut, User } from "lucide-react";
+import { LogIn, UserPlus, Home, FileText, BookOpen, Archive, LogOut, User, StickyNote } from "lucide-react";
 import { useNavigate, NavLink, Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { parseJwt } from '../../utils/jwt';
@@ -10,6 +10,7 @@ const navItems = [
   { to: "/document-analysis", label: "학습하기", icon: <FileText className="w-5 h-5" /> },
   { to: "/problem-solving", label: "문제풀기", icon: <BookOpen className="w-5 h-5" /> },
   { to: "/archive", label: "보관함", icon: <Archive className="w-5 h-5" /> },
+  { to: "/wrong-notes", label: "오답노트", icon: <StickyNote className="w-5 h-5" /> },
 ];
 
 export default function HeaderBar() {

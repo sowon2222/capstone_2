@@ -14,6 +14,7 @@ import AdditionalPractice from "./components/problem-solving/AdditionalPractice"
 import { AuthProvider } from "./contexts/AuthContext";
 import { AnalysisProvider } from "./contexts/AnalysisContext";
 import ReportPage from './pages/ReportPage';
+import WrongNotesPage from './pages/WrongNotesPage';
 
 function App() {
   const [nodes, setNodes] = useState([]);
@@ -77,6 +78,7 @@ function App() {
               <Route path="/wrong-answers" element={<WrongAnswerNote />} />
               <Route path="/additional-practice" element={<AdditionalPractice />} />
               <Route path="/report" element={<ReportPage />} />
+              <Route path="/wrong-notes" element={<WrongNotesPage />} />
             </Route>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
