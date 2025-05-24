@@ -9,7 +9,11 @@
     "@testing-library/user-event": "^13.5.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+<<<<<<< HEAD
     "chart.js": "^4.4.9",
+=======
+    "axios": "^1.9.0",
+>>>>>>> origin/main
     "d3": "^7.9.0",
     "lucide-react": "^0.511.0",
     "pdfjs-dist": "^2.16.105",

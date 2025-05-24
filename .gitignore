@@ -1,16 +1,28 @@
-# dependencies
+# Node.js dependencies
 node_modules/
 .env
 
-# production
+# Production
 dist/
 build/
 
-# misc
-.DS_Store
+# Logs
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Uploads
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Vite
 .vite/
@@ -18,7 +30,13 @@ yarn-error.log*
 # Optional
 *.local
 
+# Archives
+*.zip
+*.rar
+*.7z
+
 # Python
 venv39/
 __pycache__/
 *.pyc
+venv/

@@ -20,8 +20,39 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+<<<<<<< HEAD
       const result = await authService.login(id, password);
       await login(result);
+=======
+      // FormData 생성
+      const formData = new FormData();
+      formData.append("username", id);
+      formData.append("password", password);
+
+      const response = await fetch("http://localhost:8000/api/login", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
+      }
+
+      const data = await response.json();
+      console.log('로그인 응답:', data);
+      
+      // API 명세서의 응답 형식에 맞춰 처리
+      const userData = {
+        id: data.user_id,
+        username: data.username,
+        token: data.access_token
+      };
+
+      // 토큰을 localStorage에 저장
+      localStorage.setItem('token', data.access_token);
+      
+      await login(userData);
+>>>>>>> origin/main
       navigate("/");
     } catch (error) {
       setError(error.message || "로그인 중 오류가 발생했습니다.");

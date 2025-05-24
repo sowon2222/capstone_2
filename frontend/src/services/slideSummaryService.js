@@ -1,41 +1,41 @@
-import axios from 'axios';
+const FASTAPI_URL = process.env.REACT_APP_FASTAPI_URL;
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
-
-/**
- * PDF 파일을 분석하여 슬라이드 요약을 생성합니다.
- * @param {File} file - 분석할 PDF 파일
- * @returns {Promise<Object>} 요약 데이터
- */
-export const generateSlideSummary = async (file) => {
-  try {
+export const authService = {
+  register: async (username, password, name, email) => {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('username', username);
+    formData.append('password', password);
+    formData.append('name', name);
+    formData.append('email', email);
 
-    const response = await axios.post(`${API_BASE_URL}/api/summarize`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+    const response = await fetch(`${FASTAPI_URL}/register`, {
+      method: 'POST',
+      body: formData,
     });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || errorData.message || '회원가입 실패');
+    }
+    return response.json();
+  },
+  login: async (username, password) => {
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('password', password);
 
-    return response.data;
-  } catch (error) {
-    console.error('슬라이드 요약 생성 중 오류 발생:', error);
-    throw error;
-  }
-};
-
-/**
- * 저장된 슬라이드 요약을 조회합니다.
- * @param {string} summaryId - 조회할 요약 ID
- * @returns {Promise<Object>} 요약 데이터
- */
-export const getSlideSummary = async (summaryId) => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/api/summaries/${summaryId}`);
-    return response.data;
-  } catch (error) {
-    console.error('슬라이드 요약 조회 중 오류 발생:', error);
-    throw error;
+    const response = await fetch(`${FASTAPI_URL}/login`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || '로그인 실패');
+    }
+    return response.json();
+  },
+  logout: async () => {
+    // 서버에 별도 요청 없이 클라이언트 토큰만 삭제
+    localStorage.removeItem('token');
+    return true;
   }
 }; 

@@ -32,6 +32,7 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
+<<<<<<< HEAD
       const result = await authService.register(
         formData.id,
         formData.password,
@@ -39,6 +40,14 @@ export default function RegisterPage() {
         formData.email
       );
       await login(formData.id, formData.password);
+=======
+      await authService.register({
+        id: formData.id,
+        password: formData.password,
+        email: formData.email
+      });
+      await login(formData);
+>>>>>>> origin/main
       navigate("/");
     } catch (error) {
       setError(error.message || "회원가입 중 오류가 발생했습니다.");

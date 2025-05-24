@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from models import Question, QuestionAttempt, Keyword, WeakKeywordLog
+from sqlalchemy import func, select, text
+from models import Question, QuestionAttempt, Keyword, WeakKeywordLog, Slide
 from database import get_db
 from auth import get_current_user
 from schemas import QuizGenerationResponse, RegisterQuestionRequest
@@ -12,23 +12,29 @@ router = APIRouter()
        
 @router.get("/quiz/wrong-notes")
 def get_wrong_notes(user_id: int, db: Session = Depends(get_db)):
-    results = (
-        db.query(QuestionAttempt, Question, Keyword)
-        .join(Question, QuestionAttempt.question_id == Question.question_id)
-        .join(Keyword, Question.keyword_id == Keyword.keyword_id)
-        .filter(QuestionAttempt.user_id == user_id, QuestionAttempt.is_correct == False)
-        .all()
-    )
+    results = db.execute(
+        text("""
+            SELECT q.content, q.question_type, k.keyword_name, qa.answer, q.answer, q.explanation, qa.is_correct, qa.attempt_date
+            FROM question_attempts qa
+            JOIN questions q ON qa.question_id = q.question_id
+            JOIN question_keywords qk ON q.question_id = qk.question_id
+            JOIN keywords k ON qk.keyword_id = k.keyword_id
+            WHERE qa.user_id = :uid AND qa.is_correct = FALSE
+        """),
+        {"uid": user_id}
+    ).fetchall()
     return [
         {
-            "question": q.content,
-            "type": q.question_type,
-            "keyword": k.keyword_name,
-            "user_answer": qa.answer,
-            "correct_answer": q.answer,
-            "explanation": q.explanation
+            "question": row[0],
+            "type": row[1],
+            "keyword": row[2],
+            "user_answer": row[3],
+            "correct_answer": row[4],
+            "explanation": row[5],
+            "is_correct": row[6],
+            "attempt_date": str(row[7]) if row[7] else None
         }
-        for qa, q, k in results
+        for row in results
     ]
 
 
@@ -44,24 +50,37 @@ def weak_review(user_id: int, db: Session = Depends(get_db)):
     )
     if not weak:
         return []
-    questions = db.query(Question).filter(Question.keyword_id == weak[0]).all()
-    return [{"question_id": q.question_id, "content": q.content} for q in questions]
+    questions = db.execute(
+        text("""
+            SELECT q.question_id, q.content
+            FROM questions q
+            JOIN question_keywords k ON q.question_id = k.question_id
+            WHERE k.keyword_id = :kid
+        """),
+        {"kid": weak[0]}
+    ).fetchall()
+    return [{"question_id": row[0], "content": row[1]} for row in questions]
 
 @router.get("/quiz/my-attempts")
-def get_my_attempts(user_id: int, db: Session = Depends(get_db)):
-    attempts = (
-        db.query(QuestionAttempt, Question)
-        .join(Question, Question.question_id == QuestionAttempt.question_id)
-        .filter(QuestionAttempt.user_id == user_id)
-        .order_by(QuestionAttempt.attempt_id.desc())
-        .all()
-    )
+def get_my_attempts(user_id: int, material_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(QuestionAttempt, Question).join(Question, Question.question_id == QuestionAttempt.question_id)
+    query = query.filter(QuestionAttempt.user_id == user_id)
+    if material_id:
+        # slide -> material_id 연결
+        slide_ids = db.query(Slide.slide_id).filter(Slide.material_id == material_id).subquery()
+        query = query.filter(Question.slide_id.in_(slide_ids))
+    attempts = query.order_by(QuestionAttempt.attempt_id.desc()).all()
     return [
         {
             "attempt_id": a.QuestionAttempt.attempt_id,
+            "user_id": a.QuestionAttempt.user_id,
             "question_id": a.Question.question_id,
             "question": a.Question.content,
-            "is_correct": a.QuestionAttempt.is_correct
+            "user_answer": a.QuestionAttempt.answer,
+            "correct_answer": a.Question.answer,
+            "explanation": a.Question.explanation,
+            "is_correct": a.QuestionAttempt.is_correct,
+            "attempt_date": str(a.QuestionAttempt.attempt_date) if a.QuestionAttempt.attempt_date else None
         }
         for a in attempts
     ]
@@ -73,7 +92,6 @@ def register_question(
 ):
     question = Question(
         slide_id=data.slide_id,
-        keyword_id=data.keyword_id,
         question_type=data.type,
         content=data.question,
         answer=data.correct_answer,
@@ -82,6 +100,15 @@ def register_question(
     db.add(question)
     db.commit()
     db.refresh(question)
+
+    # 문제-키워드 연결 저장
+    for kid in data.keyword_ids:  # keyword_ids는 리스트여야 함
+        db.execute(
+            text("INSERT INTO question_keywords (question_id, keyword_id) VALUES (:qid, :kid)"),
+            {"qid": question.question_id, "kid": kid}
+        )
+    db.commit()
+
     return {
         "question_id": question.question_id,
         "message": "문제가 성공적으로 저장되었습니다."
@@ -101,7 +128,10 @@ def submit_quiz(
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
 
     # 정답 비교
-    is_correct = (user_answer.strip() == question.answer.strip())
+    if question.question_type in ['객관식', '참거짓']:
+        is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
+    else:
+        is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
 
     # 풀이 기록 저장
     attempt = QuestionAttempt(
@@ -116,13 +146,19 @@ def submit_quiz(
 
     # 오답일 경우 weak_keyword_logs에 기록
     if not is_correct:
-        weak_log = WeakKeywordLog(
-            user_id=user_id,
-            question_id=question_id,
-            keyword_id=question.keyword_id,
-            is_incorrect=True
-        )
-        db.add(weak_log)
+        # question_keywords에서 keyword_id 가져오기
+        keyword_ids = [row[0] for row in db.execute(
+            text("SELECT keyword_id FROM question_keywords WHERE question_id = :qid"),
+            {"qid": question_id}
+        )]
+        for kid in keyword_ids:
+            weak_log = WeakKeywordLog(
+                user_id=user_id,
+                question_id=question_id,
+                keyword_id=kid,
+                is_incorrect=True
+            )
+            db.add(weak_log)
         db.commit()
 
     return {
@@ -136,14 +172,22 @@ def submit_quiz(
 @router.get("/quiz/all")
 def get_all_questions(db: Session = Depends(get_db)):
     questions = db.query(Question).all()
-    return [
-        {
+    result = []
+    for q in questions:
+        # question_keywords 테이블에서 keyword_id 리스트 조회
+        keyword_ids = [row[0] for row in db.execute(
+            select([Keyword.keyword_id])
+            .select_from(Keyword)
+            .join('question_keywords', Keyword.keyword_id == text('question_keywords.keyword_id'))
+            .where(text('question_keywords.question_id = :qid')).params(qid=q.question_id)
+        )]
+        result.append({
             "question_id": q.question_id,
             "slide_id": q.slide_id,
-            "keyword_id": q.keyword_id,
             "type": q.question_type,
             "content": q.content,
             "answer": q.answer,
-            "explanation": q.explanation
-        } for q in questions
-    ]
+            "explanation": q.explanation,
+            "keyword_ids": keyword_ids
+        })
+    return result

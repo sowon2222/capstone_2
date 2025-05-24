@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 const FASTAPI_URL = process.env.REACT_APP_FASTAPI_URL;
 
 export const authService = {
@@ -9,6 +10,18 @@ export const authService = {
     formData.append('email', email);
 
     const response = await fetch(`${FASTAPI_URL}/register`, {
+=======
+const API_BASE_URL = process.env.REACT_APP_FASTAPI_URL || 'http://localhost:8000';
+
+export const authService = {
+  register: async ({ id, password, email }) => {
+    const formData = new FormData();
+    formData.append('username', id);
+    formData.append('password', password);
+    formData.append('email', email);
+
+    const response = await fetch(`${API_BASE_URL}/api/register`, {
+>>>>>>> origin/main
       method: 'POST',
       body: formData,
     });
@@ -23,7 +36,11 @@ export const authService = {
     formData.append('username', username);
     formData.append('password', password);
 
+<<<<<<< HEAD
     const response = await fetch(`${FASTAPI_URL}/login`, {
+=======
+    const response = await fetch(`${API_BASE_URL}/api/login`, {
+>>>>>>> origin/main
       method: 'POST',
       body: formData
     });

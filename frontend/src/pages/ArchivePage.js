@@ -11,7 +11,7 @@ const ArchivePage = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleArchiveSelect = (archive) => {
-    setSelectedArchive(archive);
+    setSelectedArchive({ ...archive, id: archive.material_id });
     setShowDetail(true);
   };
 
@@ -59,7 +59,7 @@ const ArchivePage = () => {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-sm text-[#bbbbbb]">
-                    {new Date(selectedArchive.date).toLocaleDateString()}
+                    {new Date(selectedArchive.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                   </span>
                   {selectedArchive.completed && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-900/80 text-green-300 rounded-full">

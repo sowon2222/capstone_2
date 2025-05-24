@@ -3,12 +3,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
 
 # ?  
-load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY")
-print("SECRET_KEY:", SECRET_KEY)
+SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
