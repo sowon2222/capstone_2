@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select, text
-from models import Question, QuestionAttempt, Keyword, WeakKeywordLog
+from models import Question, QuestionAttempt, Keyword, WeakKeywordLog, Slide
 from database import get_db
 from auth import get_current_user
 from schemas import QuizGenerationResponse, RegisterQuestionRequest
@@ -14,7 +14,7 @@ router = APIRouter()
 def get_wrong_notes(user_id: int, db: Session = Depends(get_db)):
     results = db.execute(
         text("""
-            SELECT q.content, q.question_type, k.keyword_name, qa.answer, q.answer, q.explanation
+            SELECT q.content, q.question_type, k.keyword_name, qa.answer, q.answer, q.explanation, qa.is_correct, qa.attempt_date
             FROM question_attempts qa
             JOIN questions q ON qa.question_id = q.question_id
             JOIN question_keywords qk ON q.question_id = qk.question_id
@@ -30,7 +30,9 @@ def get_wrong_notes(user_id: int, db: Session = Depends(get_db)):
             "keyword": row[2],
             "user_answer": row[3],
             "correct_answer": row[4],
-            "explanation": row[5]
+            "explanation": row[5],
+            "is_correct": row[6],
+            "attempt_date": str(row[7]) if row[7] else None
         }
         for row in results
     ]
@@ -60,20 +62,25 @@ def weak_review(user_id: int, db: Session = Depends(get_db)):
     return [{"question_id": row[0], "content": row[1]} for row in questions]
 
 @router.get("/quiz/my-attempts")
-def get_my_attempts(user_id: int, db: Session = Depends(get_db)):
-    attempts = (
-        db.query(QuestionAttempt, Question)
-        .join(Question, Question.question_id == QuestionAttempt.question_id)
-        .filter(QuestionAttempt.user_id == user_id)
-        .order_by(QuestionAttempt.attempt_id.desc())
-        .all()
-    )
+def get_my_attempts(user_id: int, material_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(QuestionAttempt, Question).join(Question, Question.question_id == QuestionAttempt.question_id)
+    query = query.filter(QuestionAttempt.user_id == user_id)
+    if material_id:
+        # slide -> material_id 연결
+        slide_ids = db.query(Slide.slide_id).filter(Slide.material_id == material_id).subquery()
+        query = query.filter(Question.slide_id.in_(slide_ids))
+    attempts = query.order_by(QuestionAttempt.attempt_id.desc()).all()
     return [
         {
             "attempt_id": a.QuestionAttempt.attempt_id,
+            "user_id": a.QuestionAttempt.user_id,
             "question_id": a.Question.question_id,
             "question": a.Question.content,
-            "is_correct": a.QuestionAttempt.is_correct
+            "user_answer": a.QuestionAttempt.answer,
+            "correct_answer": a.Question.answer,
+            "explanation": a.Question.explanation,
+            "is_correct": a.QuestionAttempt.is_correct,
+            "attempt_date": str(a.QuestionAttempt.attempt_date) if a.QuestionAttempt.attempt_date else None
         }
         for a in attempts
     ]
@@ -121,7 +128,10 @@ def submit_quiz(
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
 
     # 정답 비교
-    is_correct = (user_answer.strip() == question.answer.strip())
+    if question.question_type in ['객관식', '참거짓']:
+        is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
+    else:
+        is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
 
     # 풀이 기록 저장
     attempt = QuestionAttempt(

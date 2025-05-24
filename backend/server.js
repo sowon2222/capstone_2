@@ -179,26 +179,30 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
     }
 
     const pdfPath = req.file.path;
-    console.log('PDF 파일 경로:', pdfPath);
-    
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8'); // 한글 파일명 복원
+
     try {
         // PDF 페이지 수 확인
-        console.log('PDF 페이지 수 확인 시작');
         const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
         const data = new Uint8Array(fs.readFileSync(pdfPath));
         const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
         const numPages = pdfDoc.numPages;
-        console.log('총 페이지 수:', numPages);
-        
-        // 강의자료 정보 저장 (페이지 수만)
+
+        // 1. DB에 원본 파일명 저장
         const result = await pool.query(
             'INSERT INTO lecture_materials (user_id, material_name, page, progress) VALUES (?, ?, ?, 0)',
-            [req.user.user_id, req.file.filename, numPages]
+            [req.user.user_id, originalName, numPages]
         );
-        
         const materialId = result.insertId.toString();
-        console.log('자료 ID:', materialId);
-        
+
+        // 2. 서버에는 material_id로 파일명 변경
+        const ext = path.extname(originalName) || '.pdf';
+        const newFilename = `${materialId}${ext}`;
+        const newPath = path.join('uploads', newFilename);
+        fs.renameSync(pdfPath, newPath);
+
+        // (DB에는 이미 원본 파일명 저장했으니, material_name 업데이트 필요 없음)
+
         res.json({
             material_id: materialId,
             total_pages: numPages
@@ -272,7 +276,7 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         );
         if (!material) return res.status(404).json({ error: '자료 없음' });
 
-        const pdfPath = path.join(__dirname, 'uploads', material.material_name);
+        const pdfPath = path.join(__dirname, 'uploads', `${materialId}.pdf`);
 
         // PDF → 이미지 변환
         const pdf2picOptions = { 

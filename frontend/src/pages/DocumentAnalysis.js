@@ -3,7 +3,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle } from 'react-icons/fa';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 // PDF.js 워커 경로를 node_modules에서 직접 지정
 pdfjs.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.js`;
@@ -23,6 +23,7 @@ const DocumentAnalysis = () => {
   const pageViewStart = useRef(Date.now());
   const analysisStartTime = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const [timer, setTimer] = useState(0);
   const timerInterval = useRef(null);
 
@@ -213,6 +214,28 @@ const DocumentAnalysis = () => {
   const currentPageTime = timer;
   // 문제 출제 여부
   const hasProblem = false; // 더미 데이터 제거
+
+  // 이어하기: materialId가 state로 넘어오면 기존 자료 이어서 불러오기
+  useEffect(() => {
+    const stateMaterialId = location.state?.materialId;
+    if (stateMaterialId) {
+      setMaterialId(stateMaterialId);
+      // 서버에서 자료 정보(페이지 수 등) 불러오기
+      const token = localStorage.getItem('token');
+      fetch(`http://localhost:3000/archive/${stateMaterialId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          setNumPages(data.slides?.length || 1);
+          setFile({ name: data.title || '자료', fake: true }); // fake file 객체로 업로드 없이 UI 활성화
+          setCurrentPage(1);
+          setSelectedPage(1);
+          setViewedPages([1]);
+          setPageTimes({});
+        });
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (file && materialId) {

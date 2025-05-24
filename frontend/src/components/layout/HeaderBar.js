@@ -7,7 +7,7 @@ import { parseJwt } from '../../utils/jwt';
 
 const navItems = [
   { to: "/", label: "홈", icon: <Home className="w-5 h-5" /> },
-  { to: "/document-analysis", label: "문서 분석", icon: <FileText className="w-5 h-5" /> },
+  { to: "/document-analysis", label: "학습하기", icon: <FileText className="w-5 h-5" /> },
   { to: "/problem-solving", label: "문제풀기", icon: <BookOpen className="w-5 h-5" /> },
   { to: "/archive", label: "보관함", icon: <Archive className="w-5 h-5" /> },
 ];
@@ -40,40 +40,63 @@ export default function HeaderBar() {
 
   return (
     <header className="fixed top-0 left-0 right-0 bg-[#0f0f0f] border-b border-[#18181b] z-50">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-        {/* 로고 */}
-        <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
-          <img src="/logo.png" alt="" className="h-8 w-auto" />
-          <span className="ml-2 text-xl font-bold text-white">studywithme</span>
-        </Link>
-        {/* 네비게이션 메뉴 */}
-        <nav className="flex items-center space-x-8">
-          {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end
-              className={({ isActive }) =>
-                `flex flex-col items-center px-2 group
-                ${isActive ? "text-[#346aff] font-semibold" : "text-[#bbbbbb] hover:text-[#346aff]"}`
-              }
-              style={{ textDecoration: "none" }}
-            >
-              <span className="flex items-center gap-1">
-                {item.icon}
-                <span className="ml-1">{item.label}</span>
-              </span>
-              {/* 밑줄 */}
-              <span
-                className={`block h-0.5 mt-1 rounded-full transition-all duration-200
-                  ${window.location.pathname === item.to ? "w-6 bg-[#346aff]" : "w-0 bg-transparent"}
-                `}
-              />
-            </NavLink>
-          ))}
+      <div className="w-full px-4 h-16 flex items-center justify-between">
+        {/* 로고: 왼쪽 */}
+        <div className="flex-shrink-0 flex items-center" style={{ minWidth: 180 }}>
+          <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
+            <img src="/logo.png" alt="" className="h-8 w-auto" />
+            <span className="ml-2 text-xl font-bold text-white">studywithme</span>
+          </Link>
+        </div>
+        {/* 네비게이션 메뉴: 가운데 */}
+        <nav className="flex-1 flex items-center justify-center space-x-8">
+          {/* 홈: 아이콘만 */}
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              `flex flex-col items-center px-2 group
+              ${isActive ? "text-[#346aff] font-semibold" : "text-[#bbbbbb] hover:text-[#346aff]"}`
+            }
+            style={{ textDecoration: "none" }}
+          >
+            <span className="flex items-center gap-1">
+              <Home className="w-5 h-5" />
+            </span>
+            <span
+              className={`block h-0.5 mt-1 rounded-full transition-all duration-200
+                ${window.location.pathname === "/" ? "w-6 bg-[#346aff]" : "w-0 bg-transparent"}
+              `}
+            />
+          </NavLink>
+          {/* 나머지 메뉴: 아이콘+텍스트 */}
+          {navItems
+            .filter(item => item.label !== "홈")
+            .map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end
+                className={({ isActive }) =>
+                  `flex flex-col items-center px-2 group
+                  ${isActive ? "text-[#346aff] font-semibold" : "text-[#bbbbbb] hover:text-[#346aff]"}`
+                }
+                style={{ textDecoration: "none" }}
+              >
+                <span className="flex items-center gap-1">
+                  {item.icon}
+                  <span className="ml-1">{item.label}</span>
+                </span>
+                <span
+                  className={`block h-0.5 mt-1 rounded-full transition-all duration-200
+                    ${window.location.pathname === item.to ? "w-6 bg-[#346aff]" : "w-0 bg-transparent"}
+                  `}
+                />
+              </NavLink>
+            ))}
         </nav>
-        {/* 로그인/회원가입 or 프로필/로그아웃 버튼 */}
-        <div className="flex items-center space-x-4">
+        {/* 로그인/회원가입 or 프로필/로그아웃 버튼: 오른쪽 */}
+        <div className="flex items-center justify-end flex-shrink-0 space-x-8 min-w-[220px]">
           {isLoggedIn ? (
             <>
               <button

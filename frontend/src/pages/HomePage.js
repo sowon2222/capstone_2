@@ -17,15 +17,18 @@ export default function HomePage() {
   const [weekHistory, setWeekHistory] = useState([]);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [error, setError] = useState(null);
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState('guest');
 
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setUserName('guest');
+      return;
+    }
     const payload = parseJwt(token);
-    setUserName(payload?.username || '');
+    setUserName(payload?.username || 'guest');
   }, [token]);
 
   // 오늘의 학습 시간
@@ -54,10 +57,10 @@ export default function HomePage() {
       .then(res => res.json())
       .then(data => {
         setRecentFiles((data?.materials || []).slice(0, 3));
-        setStudyingFiles((data?.materials || []).filter(m => m.progress < 100));
-        setCompletedFiles((data?.materials || []).filter(m => m.progress === 100));
+        setStudyingFiles((data?.materials || []).filter(m => Number(m.progress) < 100));
+        setCompletedFiles((data?.materials || []).filter(m => Number(m.progress) === 100));
         setWeekHistory((data?.materials || []).slice(0, 7).map(m => ({
-          date: new Date().toISOString().slice(0, 10),
+          date: new Date().toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }),
           summary: `${m.title} ${m.page}p`
         })));
       })
@@ -88,72 +91,96 @@ export default function HomePage() {
   }, [token, selectedYear]);
 
   return (
-    <main className="pt-24 pb-16 px-4 max-w-7xl mx-auto">
-      {/* 👋 환영 메시지 */}
-      <div className="text-2xl font-bold text-white mb-8">
-        {token && userName ? `${userName}님, 오늘도 힘내세요!` : '오늘도 힘내세요!'}
+    <main className="pt-28 pb-16 px-4 max-w-5xl mx-auto">
+      {/* 환영 메시지 */}
+      <div className="text-3xl font-bold text-white mb-8 text-center">
+        {token && userName && userName !== 'guest' ? `${userName}님, 오늘도 힘내세요!` : 'guest님, 오늘도 힘내세요!'}
       </div>
-
-      {/* 상단 2단 */}
-      <div className="flex flex-col lg:flex-row gap-8 mb-12">
-        {/* 왼쪽 */}
-        <div className="flex-1 flex flex-col gap-6">
-          {/* 자료 업로드 버튼 */}
-          <button 
-            onClick={() => navigate('/document-analysis')}
-            className="w-full h-16 bg-[#346aff] text-white text-xl font-bold rounded-2xl shadow-lg hover:bg-[#2d5cd9] transition"
-          >
-            + 자료 업로드
-          </button>
-          {/* 오늘의 학습 시간 */}
-          <div className="bg-[#18181b] rounded-xl p-6 text-lg text-white shadow">
+      {/* 오늘의 학습 시간 */}
+      <div className="flex justify-center mb-12">
+        <div className="bg-[#18181b] rounded-2xl p-8 text-2xl text-white shadow-lg w-full max-w-xl flex flex-col items-center">
+          <div className="mb-2 text-lg text-[#bbbbbb] flex items-center gap-2">
+            <span>🕒 오늘 학습:</span>
+            <span className="font-bold text-white text-2xl">{todayStudyTime ?? '0점'}</span>
+          </div>
+        </div>
+      </div>
+      {/* 2단 그리드 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12">
+        {/* 왼쪽: 학습중인/완료 */}
+        <div className="flex flex-col gap-8">
+          {/* 학습중인 자료 */}
+          <div className="bg-[#18181b] rounded-2xl p-6 text-white shadow-md">
+            <div className="font-semibold text-xl mb-4 flex items-center gap-2 justify-between">
+              <span className="flex items-center gap-2">
+                <span className="text-2xl">📘</span> 학습중인 자료
+              </span>
+              <button
+                onClick={() => navigate('/document-analysis')}
+                className="ml-2 px-4 py-1 rounded-lg bg-[#346aff] text-white text-sm font-semibold hover:bg-[#2554b0] transition"
+              >
+                + New
+              </button>
+            </div>
             {!token ? (
-              <div className="text-center">로그인 후 이용 가능합니다</div>
-            ) : todayStudyTime === null ? (
-              <div className="text-center">로딩 중...</div>
+              <div className="text-center min-h-20 flex items-center justify-center mt-6">로그인 후 이용 가능합니다</div>
+            ) : studyingFiles.length === 0 ? (
+              <div className="text-[#bbbbbb] text-center min-h-20 flex items-center justify-center mt-6">학습중인 자료가 없습니다.</div>
             ) : (
-              <>🕒 오늘 학습: <span className="font-bold">{todayStudyTime}</span></>
+              <ul className="space-y-2">
+                {studyingFiles.map(f => (
+                  <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
+                    <span className="truncate max-w-xs">{f.title}</span>
+                    <button
+                      onClick={e => {
+                        e.preventDefault();
+                        navigate('/document-analysis', { state: { materialId: f.material_id } });
+                      }}
+                      className="text-[#346aff] hover:underline"
+                    >
+                      이어하기
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-          {/* 최근 업로드 자료 */}
-          <div className="bg-[#18181b] rounded-xl p-6 text-white shadow">
-            <div className="font-semibold mb-2">📂 최근 업로드한 자료</div>
+          {/* 학습완료 자료 */}
+          <div className="bg-[#18181b] rounded-2xl p-6 text-white shadow-md">
+            <div className="font-semibold text-xl mb-4 flex items-center gap-2">
+              <span className="text-2xl">✅</span> 학습완료 자료
+            </div>
             {!token ? (
-              <div className="text-center">로그인 후 이용 가능합니다</div>
-            ) : recentFiles.length === 0 ? (
-              <li className="text-[#bbbbbb]">자료가 없습니다.</li>
+              <div className="text-center min-h-20 flex items-center justify-center mt-6">로그인 후 이용 가능합니다</div>
+            ) : completedFiles.length === 0 ? (
+              <div className="text-[#bbbbbb] text-center min-h-20 flex items-center justify-center mt-6">학습완료 자료가 없습니다.</div>
             ) : (
-              <ul>
-                {recentFiles.map(f => (
-                  <li key={f.material_id} className="flex justify-between items-center py-1">
-                    <span>{f.title}</span>
-                    <a href="#" className="text-[#346aff] hover:underline">이어하기</a>
+              <ul className="space-y-2">
+                {completedFiles.map(f => (
+                  <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
+                    <span className="truncate max-w-xs">{f.title}</span>
+                    <button
+                      onClick={e => {
+                        e.preventDefault();
+                        navigate(`/archive/${f.material_id}`);
+                      }}
+                      className="text-[#346aff] hover:underline"
+                    >
+                      복습하기
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
           </div>
         </div>
-        {/* 오른쪽: 잔디형 그래프 */}
-        <div className="flex-1 bg-[#18181b] rounded-xl p-6 shadow flex flex-col items-center">
-          {/* 연도 선택 탭 */}
-          <div className="flex gap-2 mb-2">
-            {[selectedYear].map(year => (
-              <button
-                key={year}
-                onClick={() => setSelectedYear(year)}
-                className={`px-4 py-1 rounded-lg text-sm font-semibold transition-colors
-                  ${selectedYear === year ? "bg-[#346aff] text-white" : "bg-[#23232a] text-[#bbbbbb] hover:bg-[#2d5cd9]"}
-                `}
-              >
-                {year}
-              </button>
-            ))}
-          </div>
-          <div className="font-semibold text-white mb-4">🌱 나의 학습 그래프</div>
-          {!token ? (
-            <div className="text-center text-white">로그인 후 이용 가능합니다</div>
-          ) : (
+        {/* 오른쪽: 잔디그래프+일주일내역 */}
+        <div className="flex flex-col gap-8 items-center">
+          <div className="bg-[#18181b] rounded-2xl p-6 text-white shadow-md w-full flex flex-col items-center">
+            <div className="mb-2 flex flex-col items-center">
+              <span className="px-3 py-1 rounded-full bg-[#346aff] text-white text-sm font-bold mb-2">{selectedYear}</span>
+              <div className="font-semibold text-xl mb-2">🌱 나의 학습 그래프</div>
+            </div>
             <CalendarHeatmap
               startDate={new Date(`${selectedYear}-01-01`)}
               endDate={new Date(`${selectedYear}-12-31`)}
@@ -167,14 +194,12 @@ export default function HomePage() {
               }}
               showWeekdayLabels={true}
             />
-          )}
+          </div>
           {/* 하단 일주일 내역 */}
-          <div
-            className="w-full mt-4 max-h-32 overflow-y-auto hide-scrollbar bg-[#23232a] rounded-lg p-3 text-white text-sm"
-            style={{ minHeight: "80px" }}
-          >
+          <div className="w-full bg-[#23232a] rounded-xl p-4 text-white text-base shadow flex flex-col gap-2 min-h-[100px]">
+            <div className="font-semibold mb-2">최근 학습 내역</div>
             {!token ? (
-              <div className="text-center">로그인 후 이용 가능합니다</div>
+              <div className="text-center text-[#bbbbbb]">로그인 후 이용 가능합니다</div>
             ) : weekHistory.length === 0 ? (
               <div className="text-[#bbbbbb] text-center">최근 학습 내역이 없습니다.</div>
             ) : (
@@ -190,45 +215,8 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-
-      {/* 하단 2단 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-        {/* 학습중 */}
-        <div className="bg-[#18181b] rounded-xl p-6 shadow text-white">
-          <div className="font-semibold mb-2">📘 학습중인 자료</div>
-          {!token ? (
-            <div className="text-center">로그인 후 이용 가능합니다</div>
-          ) : studyingFiles.length === 0 ? (
-            <div className="text-[#bbbbbb]">진행중인 자료가 없습니다.</div>
-          ) : (
-            studyingFiles.map(f => (
-              <div key={f.material_id} className="flex justify-between items-center py-1">
-                <span>{f.title}</span>
-                <a href="#" className="text-[#346aff] hover:underline">이어하기</a>
-              </div>
-            ))
-          )}
-        </div>
-        {/* 학습완료 */}
-        <div className="bg-[#18181b] rounded-xl p-6 shadow text-white">
-          <div className="font-semibold mb-2">✅ 학습완료 자료</div>
-          {!token ? (
-            <div className="text-center">로그인 후 이용 가능합니다</div>
-          ) : completedFiles.length === 0 ? (
-            <div className="text-[#bbbbbb]">완료된 자료가 없습니다.</div>
-          ) : (
-            completedFiles.map(f => (
-              <div key={f.material_id} className="flex justify-between items-center py-1">
-                <span>{f.title}</span>
-                <a href="#" className="text-[#346aff] hover:underline">복습하기</a>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
       {/*학습 리포트 요약 배너 */}
-      <div className="bg-gradient-to-r from-[#346aff] to-[#2d5cd9] rounded-xl p-6 text-white text-lg font-semibold shadow text-center">
+      <div className="bg-gradient-to-r from-[#346aff] to-[#2d5cd9] rounded-xl p-6 text-white text-lg font-semibold shadow text-center mt-12">
         📈 오답률이 높은 자료는 TCP/IP 영역 입니다. "이런 부분을 더 공부하세요!"
       </div>
     </main>

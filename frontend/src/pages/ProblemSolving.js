@@ -44,6 +44,15 @@ export default function ProblemSolving() {
     generateProblemForSlide(slides[0]);
   }, [slides]);
 
+  useEffect(() => {
+    if (slides.length > 0 && slides[currentSlideIdx]) {
+      generateProblemForSlide(slides[currentSlideIdx]);
+      setAnswers({});
+      setShowExplanation({});
+    }
+    // eslint-disable-next-line
+  }, [currentSlideIdx]);
+
   const generateProblemForSlide = async (slide) => {
     setProblemsLoading(true);
     setLoading(true);
@@ -127,15 +136,9 @@ export default function ProblemSolving() {
   // 제출/중단 버튼
   const handleSubmit = () => {
     setShowConfirm(true);
-    // 다음 슬라이드로 이동
-    if (currentSlideIdx < slides.length - 1) {
-      setCurrentSlideIdx(currentSlideIdx + 1);
-      generateProblemForSlide(slides[currentSlideIdx + 1]);
-    } else {
-      // 모든 슬라이드 문제 풀이 끝
-      setShowResult(true);
-    }
   };
+
+  // 문제풀이 중단(목록으로 이동)
   const handleStop = () => {
     setCurrentView('list');
     setSelectedDocument(null);
@@ -145,9 +148,36 @@ export default function ProblemSolving() {
   };
 
   // 제출 확인 모달
-  const handleConfirmYes = () => {
+  const handleConfirmYes = async () => {
     setShowConfirm(false);
-    setShowResult(true);
+    // 마지막 문제면 결과, 아니면 다음 문제로 이동
+    if (currentSlideIdx === slides.length - 1) {
+      // 문제 제출 API 호출
+      const token = localStorage.getItem('token');
+      const payload = parseJwt(token);
+      const userId = payload?.user_id;
+      const problem = problems[0]; // 현재 문제
+      const userAnswer = answers[currentSlideIdx];
+      let answerValue = userAnswer;
+      if (problem.type === '객관식' || problem.type === '참/거짓') {
+        answerValue = problem.options[userAnswer];
+      }
+      await fetch('http://localhost:8000/quiz/submit', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          question_id: problem.id,
+          user_answer: answerValue
+        })
+      });
+      setShowResult(true);
+    } else {
+      setCurrentSlideIdx((prev) => Math.min(prev + 1, slides.length - 1));
+    }
   };
   const handleConfirmNo = () => setShowConfirm(false);
 
@@ -176,45 +206,26 @@ export default function ProblemSolving() {
   const handleRestart = async () => {
     setShowResult(false);
     setCurrentView('problem');
-    setSelectedDocument(null);
-    setCurrentSlideIdx(0);
     setAnswers({});
     setShowExplanation({});
     setProblems([]);
     setProblemsLoading(true);
     // materialId로 slides 새로 요청
     const token = localStorage.getItem('token');
-    const res = await fetch(`http://localhost:3000/slides/material/${location.state.materialId}`, {
+    if (!selectedDocument || !selectedDocument.material_id) {
+      // 예외: 선택된 문서가 없으면 목록으로 이동
+      setCurrentView('list');
+      setProblemsLoading(false);
+      return;
+    }
+    const res = await fetch(`http://localhost:3000/slides/material/${selectedDocument.material_id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     const slidesData = await res.json();
     setSlides(slidesData || []);
-    if (slidesData && slidesData.length > 0) {
-      generateProblemForSlide(slidesData[0]);
-    }
+    setCurrentSlideIdx(0);
+    // 첫 슬라이드에 대해 새로운 문제 생성 (useEffect에서 자동 호출되므로 여기서 호출하지 않음)
     setProblemsLoading(false);
-  };
-
-  const mappedWrongNotes = problems
-    .map((p, idx) => ({
-      id: p.id,
-      question: p.question,
-      correctAnswer: typeof p.correct === 'number' ? p.options[p.correct] : p.correct,
-      userAnswer: answers[idx] !== undefined ? p.options[answers[idx]] : '미제출',
-      explanation: p.explanation
-    }))
-    .filter((item) => item.userAnswer !== item.correctAnswer);
-
-  const handleWrongAnswerNote = () => {
-    // 오답노트 데이터를 localStorage에 저장
-    localStorage.setItem('wrongAnswers', JSON.stringify(mappedWrongNotes));
-    navigate('/wrong-answers');
-  };
-
-  const handleAdditionalPractice = () => {
-    // 보충학습 데이터를 localStorage에 저장
-    localStorage.setItem('wrongAnswers', JSON.stringify(mappedWrongNotes));
-    navigate('/additional-practice');
   };
 
   // 진도율 계산
@@ -225,13 +236,21 @@ export default function ProblemSolving() {
   const totalCount = problems.length;
   const score = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
 
-  const handleDocumentSelect = (mat) => {
+  const handleDocumentSelect = async (mat) => {
     setCurrentView('problem');
     setSelectedDocument(mat);
     setCurrentSlideIdx(0);
     setAnswers({});
     setShowResult(false);
-    // 필요시 slides 정보 갱신
+
+    // 1. 슬라이드 목록 불러오기
+    const token = localStorage.getItem('token');
+    const res = await fetch(`http://localhost:3000/slides/material/${mat.material_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const slidesData = await res.json();
+    setSlides(slidesData || []);
+    // 2. 첫 슬라이드에 대해 새로운 문제 생성 (useEffect에서 자동 호출되므로 여기서 호출하지 않음)
   };
 
   // 본 문제풀이 ... 결과 화면(showResult) ...점수, 정답/오답 해설, 오답 노트 보기, 보충학습 하기 포함함
@@ -323,8 +342,8 @@ export default function ProblemSolving() {
               >
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-white">
-                    정답: {p.options[p.correct]}
-                    {!p.options[answers[idx]] || answers[idx] === p.correct ? null : <><br/>제출한 답: {p.options[answers[idx]]}</>}
+                    정답: {p.type === '주관식' ? p.correct : p.options[p.correct]}
+                    {answers[idx] === p.correct || answers[idx] === undefined ? null : <><br/>제출한 답: {p.type === '주관식' ? answers[idx] : p.options[answers[idx]]}</>}
                   </span>
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold
                     ${answers[idx] === p.correct
@@ -377,150 +396,141 @@ export default function ProblemSolving() {
         </div>
       </div>
       {/* 문제 카드 + 네비게이션 */}
-      <div className="flex flex-col md:flex-row gap-8 w-full max-w-3xl">
-        {/* 왼쪽: 네비게이션 (md 이상에서만) */}
-        <div className="hidden md:flex flex-col items-center gap-4 pt-2">
-          <div className="flex flex-col gap-2">
-            {(slides || []).map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleNumberClick(idx)}
-                className={`w-12 h-12 rounded-xl font-bold border text-lg transition-all duration-150
-                  ${currentSlideIdx === idx
-                    ? 'bg-[#346aff] text-white border-[#346aff] shadow-lg scale-105'
-                    : 'bg-[#232329] text-[#bbbbbb] border-[#3a3a42] hover:bg-[#2a2a32] hover:shadow-[0_0_0_2px_#346aff]'}
-                `}
-              >
-                {idx + 1}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* 모바일: 네비게이션 카드 위에 */}
-        <div className="flex md:hidden flex-row justify-center gap-2 mb-4">
-          {(slides || []).map((_, idx) => (
+      <div className="flex flex-row gap-8 w-full max-w-4xl mx-auto">
+        {/* 왼쪽: 슬라이드 네비게이션 */}
+        <div className="w-16 bg-[#18181b] rounded-2xl shadow flex flex-col items-center py-6 gap-2 min-h-[400px] max-h-[70vh] overflow-y-auto hide-scrollbar">
+          {slides.map((slide, idx) => (
             <button
-              key={idx}
-              onClick={() => handleNumberClick(idx)}
-              className={`w-10 h-10 rounded-xl font-bold border text-base transition-all duration-150
-                ${currentSlideIdx === idx
-                  ? 'bg-[#346aff] text-white border-[#346aff] shadow-lg scale-105'
-                  : 'bg-[#232329] text-[#bbbbbb] border-[#3a3a42] hover:bg-[#2a2a32] hover:shadow-[0_0_0_2px_#346aff]'}
-              `}
+              key={slide.slide_id}
+              onClick={() => setCurrentSlideIdx(idx)}
+              className={
+                `w-10 h-10 flex items-center justify-center rounded-full font-bold text-base border-2 transition-all duration-150 ` +
+                (currentSlideIdx === idx
+                  ? 'bg-[#346aff] text-white border-[#346aff] shadow-lg scale-110'
+                  : 'bg-[#232329] text-[#bbbbbb] border-[#23232a] hover:bg-[#2a2a32] hover:text-[#346aff] hover:border-[#346aff]')
+              }
             >
-              {idx + 1}
+              {slide.slide_number}
             </button>
           ))}
         </div>
         {/* 문제 카드 */}
-        <div className="bg-[#232329] rounded-3xl shadow-2xl p-10 w-full flex flex-col relative">
-          <div className="text-2xl font-bold text-white mb-8">
-            {slides && slides.length > 0 ? slides[currentSlideIdx].slide_title : ''}
-          </div>
-          
-          {/* 난이도 표시 */}
-          <div className="mb-4">
-            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-900/60 text-blue-300">
-              난이도: {problems[0]?.difficulty || ''}
-            </span>
-          </div>
-
-          {/* 문제 유형별 보기 */}
-          <div className="flex flex-col gap-6">
-            {(() => {
-              const problem = problems[0];
-              if (!problem) return null;
-              if (problem.options && problem.options.length > 1 && problem.type === '객관식') {
-                // 객관식
-                return problem.options.map((opt, oidx) => (
-                  <label key={oidx} className={`flex items-center gap-4 bg-[#2a2a32] rounded-lg px-4 py-5 cursor-pointer text-lg font-medium transition-all duration-150
-                    ${answers[currentSlideIdx] === oidx ? 'border-2 border-[#346aff] text-[#346aff] bg-[#2d2d35] scale-[1.03]' : 'border border-[#3a3a42] text-white hover:bg-[#2d2d35]'}
-                  `}>
-                    <input
-                      type="radio"
-                      name={`problem-${currentSlideIdx}`}
-                      className="accent-[#346aff] w-6 h-6 transition-transform duration-150"
-                      checked={answers[currentSlideIdx] === oidx}
-                      onChange={() => handleOptionSelect(oidx)}
-                    />
-                    <span>{opt}</span>
-                  </label>
-                ));
-              } else if (problem.type === '주관식') {
-                // 주관식
-                return (
-                  <input
-                    type="text"
-                    className="w-full px-4 py-3 rounded-lg border border-[#346aff] text-lg bg-[#f3f4f6] text-black"
-                    placeholder="정답을 입력하세요"
-                    value={answers[currentSlideIdx] || ''}
-                    onChange={e => setAnswers(prev => ({ ...prev, [currentSlideIdx]: e.target.value }))}
-                  />
-                );
-              } else if (problem.type === '참/거짓') {
-                // 참/거짓
-                return (
-                  <div className="flex gap-4">
-                    {['참', '거짓'].map((opt, oidx) => (
-                      <button
-                        key={opt}
-                        className={`px-6 py-3 rounded-lg font-semibold text-lg transition
-                          ${answers[currentSlideIdx] === oidx
-                            ? 'bg-[#346aff] text-white'
-                            : 'bg-[#23232a] text-[#bbbbbb] border border-[#3a3a42] hover:bg-[#2d2d35]'}
-                        `}
-                        onClick={() => handleOptionSelect(oidx)}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                );
-              } else {
-                // 기타(예: 빈칸채우기 등)
-                return <div className="text-[#bbbbbb]">지원하지 않는 문제 유형입니다.</div>;
-              }
-            })()}
-          </div>
-
-          {/* 태그 표시 */}
-          {slides[currentSlideIdx]?.tags && slides[currentSlideIdx]?.tags.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {slides[currentSlideIdx].tags.map((tag, idx) => (
-                <span key={idx} className="px-2 py-1 rounded-full text-sm bg-gray-700 text-gray-300">
-                  #{tag}
-                </span>
-              ))}
+        <div className="flex-1 bg-[#232329] rounded-3xl shadow-2xl p-10 flex flex-col relative min-h-[400px]">
+          {problemsLoading ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[200px]">
+              <svg className="animate-spin h-10 w-10 text-[#346aff] mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+              </svg>
+              <div className="text-[#bbbbbb] text-lg">문제를 생성하고 있습니다...</div>
             </div>
+          ) : (
+            <>
+              <div className="text-2xl font-bold text-white mb-8 break-words whitespace-pre-line">
+                {problems[0]?.question}
+              </div>
+              {/* 난이도 표시 */}
+              <div className="mb-4">
+                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-900/60 text-blue-300">
+                  난이도: {problems[0]?.difficulty || ''}
+                </span>
+              </div>
+              {/* 문제 유형별 보기 */}
+              <div className="flex flex-col gap-6">
+                {(() => {
+                  const problem = problems[0];
+                  if (!problem) return null;
+                  if (problem.options && problem.options.length > 1 && problem.type === '객관식') {
+                    // 객관식
+                    return problem.options.map((opt, oidx) => (
+                      <label key={oidx} className={`flex items-center gap-4 bg-[#2a2a32] rounded-lg px-4 py-5 cursor-pointer text-lg font-medium transition-all duration-150
+                        ${answers[currentSlideIdx] === oidx ? 'border-2 border-[#346aff] text-[#346aff] bg-[#2d2d35] scale-[1.03]' : 'border border-[#3a3a42] text-white hover:bg-[#2d2d35]'}
+                      `}>
+                        <input
+                          type="radio"
+                          name={`problem-${currentSlideIdx}`}
+                          className="accent-[#346aff] w-6 h-6 transition-transform duration-150"
+                          checked={answers[currentSlideIdx] === oidx}
+                          onChange={() => handleOptionSelect(oidx)}
+                        />
+                        <span className="break-words whitespace-pre-line">{opt}</span>
+                      </label>
+                    ));
+                  } else if (problem.type === '주관식') {
+                    // 주관식
+                    return (
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 rounded-lg border border-[#346aff] text-lg bg-[#f3f4f6] text-black"
+                        placeholder="정답을 입력하세요"
+                        value={answers[currentSlideIdx] || ''}
+                        onChange={e => setAnswers(prev => ({ ...prev, [currentSlideIdx]: e.target.value }))}
+                      />
+                    );
+                  } else if (problem.type === '참/거짓') {
+                    // 참/거짓
+                    return (
+                      <div className="flex gap-4">
+                        {['참', '거짓'].map((opt, oidx) => (
+                          <button
+                            key={opt}
+                            className={`px-6 py-3 rounded-lg font-semibold text-lg transition
+                              ${answers[currentSlideIdx] === oidx
+                                ? 'bg-[#346aff] text-white'
+                                : 'bg-[#23232a] text-[#bbbbbb] border border-[#3a3a42] hover:bg-[#2d2d35]'}
+                            `}
+                            onClick={() => handleOptionSelect(oidx)}
+                          >
+                            <span className="break-words whitespace-pre-line">{opt}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  } else {
+                    // 기타(예: 빈칸채우기 등)
+                    return <div className="text-[#bbbbbb]">지원하지 않는 문제 유형입니다.</div>;
+                  }
+                })()}
+              </div>
+              {/* 태그 표시 */}
+              {slides[currentSlideIdx]?.tags && slides[currentSlideIdx]?.tags.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {slides[currentSlideIdx].tags.map((tag, idx) => (
+                    <span key={idx} className="px-2 py-1 rounded-full text-sm bg-gray-700 text-gray-300">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* 이전/다음 버튼 */}
+              <div className="flex justify-between mt-8">
+                <button
+                  onClick={handlePrev}
+                  disabled={currentSlideIdx === 0}
+                  className={`px-8 py-3 rounded-lg font-semibold text-base transition
+                    ${currentSlideIdx === 0 ? 'bg-[#3a3a42] text-[#bbbbbb] cursor-not-allowed' : 'bg-[#346aff] text-white hover:bg-[#2554b0]'}
+                  `}
+                >
+                  이전 문제
+                </button>
+                {currentSlideIdx === slides.length - 1 ? (
+                  <button
+                    className="px-8 py-3 bg-[#346aff] text-white rounded-lg font-semibold hover:bg-[#2554b0] transition"
+                    onClick={handleSubmit}
+                  >
+                    제출 하기
+                  </button>
+                ) : (
+                  <button
+                    className="px-8 py-3 rounded-lg font-semibold text-base transition bg-[#346aff] text-white hover:bg-[#2554b0]"
+                    onClick={handleNext}
+                  >
+                    다음 문제
+                  </button>
+                )}
+              </div>
+            </>
           )}
-
-          {/* 이전/다음 버튼 */}
-          <div className="flex justify-between mt-8">
-            <button
-              onClick={handlePrev}
-              disabled={currentSlideIdx === 0}
-              className={`px-8 py-3 rounded-lg font-semibold text-base transition
-                ${currentSlideIdx === 0 ? 'bg-[#3a3a42] text-[#bbbbbb] cursor-not-allowed' : 'bg-[#346aff] text-white hover:bg-[#2554b0]'}
-              `}
-            >
-              이전 문제
-            </button>
-            {currentSlideIdx === slides.length - 1 ? (
-              <button
-                className="px-8 py-3 bg-[#346aff] text-white rounded-lg font-semibold hover:bg-[#2554b0] transition"
-                onClick={handleSubmit}
-              >
-                제출 하기
-              </button>
-            ) : (
-              <button
-                className="px-8 py-3 rounded-lg font-semibold text-base transition bg-[#346aff] text-white hover:bg-[#2554b0]"
-                onClick={handleNext}
-              >
-                다음 문제
-              </button>
-            )}
-          </div>
         </div>
       </div>
       {/* 제출 확인 모달 */}
