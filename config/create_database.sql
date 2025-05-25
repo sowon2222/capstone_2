@@ -161,4 +161,15 @@ SELECT
   count(0) AS `incorrect_count` 
 FROM `weak_keyword_logs` 
 WHERE `weak_keyword_logs`.`is_incorrect` = 1 
-GROUP BY `weak_keyword_logs`.`user_id`,`weak_keyword_logs`.`keyword_id`; 
+GROUP BY `weak_keyword_logs`.`user_id`,`weak_keyword_logs`.`keyword_id`;
+
+-- 집중 세션 테이블 추가
+CREATE TABLE focus_session (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    duration INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_focus_session_user FOREIGN KEY (user_id) REFERENCES users(user_id)
+); 

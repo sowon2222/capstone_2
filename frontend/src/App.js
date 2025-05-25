@@ -16,6 +16,10 @@ import { AnalysisProvider } from "./contexts/AnalysisContext";
 import ReportPage from './pages/ReportPage';
 import WrongNotesPage from './pages/WrongNotesPage';
 
+import FocusDashboard from './components/FocusDashboard';
+import FocusSolveHabit from './components/FocusSolveHabit';
+import ReviewCurationCard from './components/ReviewCurationCard';
+
 function App() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);

@@ -27,11 +27,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MariaDB 연결 풀 설정
 const pool = mariadb.createPool({
-    host: 'localhost',
-    user: 'root',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    connectionLimit: 5
+    port: process.env.DB_PORT,
+    connectionLimit: 5,
+    allowPublicKeyRetrieval: true
 });
 
 
@@ -639,6 +641,20 @@ app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: '키워드 리스트 조회 오류' });
     }
+});
+
+// 누적 학습 시간(초) 반환
+app.get('/api/study-time/total', authenticateToken, async (req, res) => {
+  const userId = req.user.user_id;
+  try {
+    const [row] = await pool.query(
+      'SELECT SUM(total_time) as total_time FROM daily_study_time WHERE user_id = ?',
+      [userId]
+    );
+    res.json({ total_time: row && row.total_time ? row.total_time : 0 });
+  } catch (err) {
+    res.status(500).json({ error: '총 학습 시간 조회 오류' });
+  }
 });
 
 // 서버 시작
