@@ -5,7 +5,6 @@ from models import Archive, LectureMaterial, Slide, Question
 from auth import get_current_user
 import pdfplumber
 from database import Base, get_db, engine
-from gpt_generate import generate_material_quiz
 
 router = APIRouter()
 
@@ -23,22 +22,18 @@ def upload_pdf(
         for page in pdf.pages:
             original_text += page.extract_text() + "\n"
     summary = call_summary_model(original_text)
-    # 1. 강의자료 등록
-    material = LectureMaterial(
-        user_id=user_id,  # 실제 서비스에서는 인증에서 받아옴
-        material_name=file.filename,
-        page=len(pdf.pages),
-        summary=summary
+    quiz_json = call_quiz_model(summary)
+    archive = Archive(
+        user_id=user_id,
+        filename=file.filename,
+        original_text=original_text,
+        summary=summary,
+        quiz_json=quiz_json
     )
-    db.add(material)
+    db.add(archive)
     db.commit()
-    db.refresh(material)
-    material_id = material.material_id
-    # 2. 슬라이드 분리 및 저장 (이미 있다면 생략)
-    # ... 기존 슬라이드 분리/저장 코드 ...
-    # 3. 10문제 미리 생성해서 DB에 저장
-    generate_material_quiz(material_id=material_id, db=db)
-    return {"material_id": material_id}
+    db.refresh(archive)
+    return {"archive_id": archive.id}
 
 @router.get("/archives")
 def get_archives(

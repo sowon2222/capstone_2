@@ -21,7 +21,7 @@ class Question(Base):
     __tablename__ = "questions"
     question_id = Column(Integer, primary_key=True, index=True)
     slide_id = Column(Integer, ForeignKey("slides.slide_id"), nullable=False)
-    question_type = Column(Enum('객관식', '주관식', '참/거짓', '빈칸 채우기'), nullable=False)
+    question_type = Column(Enum('객관식', '주관식', '참거짓', '빈칸채우기'), nullable=False)
     content = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     explanation = Column(Text)

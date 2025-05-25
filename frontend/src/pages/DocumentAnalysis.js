@@ -1,31 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle, FaSearch } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
-import './ProblemSolving.css';
+import '../styles/ProblemSolving.css';
 
 const DocumentAnalysis = () => {
-  // 화면 모드: list(자료목록) | upload(업로드/분석)
+  const [file, setFile] = useState(null);
+  const [numPages, setNumPages] = useState(0); // 초기값 0
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedPage, setSelectedPage] = useState(1);
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showQuizPrompt, setShowQuizPrompt] = useState(false);
+  const [viewedPages, setViewedPages] = useState([1]); // 학습한 페이지
+  const [pageTimes, setPageTimes] = useState({}); // 각 페이지별 학습 시간(초)
+  const [materialId, setMaterialId] = useState(null); // material_id 저장용 state 추가
+  const [timer, setTimer] = useState(0);
   const [mode, setMode] = useState('list');
   const [archives, setArchives] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [file, setFile] = useState(null);
-  const [numPages, setNumPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedPage, setSelectedPage] = useState(1);
-  const [viewedPages, setViewedPages] = useState([1]);
-  const [pageTimes, setPageTimes] = useState({});
-  const [materialId, setMaterialId] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
   const [slideAnalyses, setSlideAnalyses] = useState({});
-  const [timer, setTimer] = useState(0);
-  const timerInterval = useRef(null);
   const fileInputRef = useRef(null);
   const [pendingPageSelect, setPendingPageSelect] = useState(null);
   const pollingRef = useRef(null);
+  const timerInterval = useRef(null);
 
   const navigate = useNavigate();
   const location = useLocation();
+  const stateMaterialId = location.state?.materialId;
 
   // --- 1) 강의자료 리스트 불러오기 ---
   useEffect(() => {
@@ -99,49 +100,51 @@ const DocumentAnalysis = () => {
     setAnalysis(null);
   };
 
-  // --- 5) 타이머 관리 ---
+  // 타이머 관리 함수들
+  const startTimer = () => {
+    if (timerInterval.current) clearInterval(timerInterval.current);
+    timerInterval.current = setInterval(() => {
+      setTimer(prev => prev + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerInterval.current) {
+      clearInterval(timerInterval.current);
+      timerInterval.current = null;
+    }
+  };
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  useEffect(() => {
+    return () => {
+      stopTimer();
+    };
+  }, []);
+
+  // 페이지 변경 시 타이머 관리
   useEffect(() => {
     if (!file) return;
     setTimer(pageTimes[selectedPage] || 0);
-    timerInterval.current = setInterval(() => {
-      setTimer(t => t + 1);
-    }, 1000);
-    return () => clearInterval(timerInterval.current);
+    startTimer();
+    return () => {
+      setPageTimes(prev => ({
+        ...prev,
+        [selectedPage]: timer
+      }));
+    };
   }, [selectedPage, file]);
-
-  useEffect(() => {
-    if (!file) return;
-    // 페이지 이동 시 이전 시간 저장
-    setPageTimes(prev => ({ ...prev, [selectedPage]: timer }));
-  }, [selectedPage]);
-
-  const startTimer = () => {
-    clearInterval(timerInterval.current);
-    timerInterval.current = setInterval(() => {
-      setTimer(t => t + 1);
-    }, 1000);
-  };
-  const stopTimer = () => clearInterval(timerInterval.current);
-
-  useEffect(() => () => stopTimer(), []);
 
   // --- 6) 페이지 선택 & 분석 ---
   const handlePageSelect = async (pageNumber) => {
-    if (!materialId) { alert('강의자료가 업로드되지 않았습니다.'); return; }
-    // 이미 분석된 슬라이드는 바로 복원
-    if (slideAnalyses[pageNumber]) {
-      setSelectedPage(pageNumber);
-      setCurrentPage(pageNumber);
-      setViewedPages(v => v.includes(pageNumber) ? v : [...v, pageNumber]);
-      setAnalysis(slideAnalyses[pageNumber]);
-      setTimer(pageTimes[pageNumber] || 0);
-      startTimer();
+    if (!materialId) {
+      alert('강의자료가 업로드되지 않았습니다.');
       return;
     }
     // 신규 분석 요청 제거: 서버에서 자동 생성됨
     setSelectedPage(pageNumber);
     setCurrentPage(pageNumber);
-    setViewedPages(v => v.includes(pageNumber) ? v : [...v, pageNumber]);
+    setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
     setLoading(true);
     try {
       // 서버에서 슬라이드 분석 결과만 불러오기
@@ -156,7 +159,6 @@ const DocumentAnalysis = () => {
       setSlideAnalyses(analyses);
       setAnalysis(analyses[pageNumber] || null);
       setTimer(pageTimes[pageNumber] || 0);
-      startTimer();
     } catch {
       alert('슬라이드 요약을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -182,6 +184,7 @@ const DocumentAnalysis = () => {
     const formData = new FormData();
     formData.append('pdf', f);
     const token = localStorage.getItem('token');
+    
     try {
       setLoading(true);
       const uploadRes = await fetch('http://localhost:3000/api/upload', {
@@ -261,20 +264,27 @@ const DocumentAnalysis = () => {
       fetchPdfFile(data.materialId).then(blob => setFile(blob));
       // 분석 결과 복원
       const token = localStorage.getItem('token');
-      fetch(`http://localhost:3000/archive/${data.materialId}`, {
+      fetch(`http://localhost:3000/archive/${stateMaterialId}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(res => res.json())
-        .then(d => {
-          const analyses = {};
-          (d.slides || []).forEach(sl => {
-            analyses[sl.slide_number] = sl;
-          });
-          setSlideAnalyses(analyses);
-          setAnalysis(analyses[data.selectedPage] || null);
+        .then(data => {
+          setNumPages(data.slides?.length || 1);
+          setFile({ name: data.title || '자료', fake: true }); // fake file 객체로 업로드 없이 UI 활성화
+          setCurrentPage(1);
+          setSelectedPage(1);
+          setViewedPages([1]);
+          setPageTimes({});
         });
     }
-  }, []);
+  }, [location.state]);
+
+  useEffect(() => {
+    if (file && materialId) {
+      handlePageSelect(1);
+    }
+    // eslint-disable-next-line
+  }, [file, materialId]);
 
   // PDF 업로드 후 첫 슬라이드 자동 분석
   useEffect(() => {
@@ -302,6 +312,13 @@ const DocumentAnalysis = () => {
   const handleGoToArchiveDetail = () => {
     if (materialId) {
       navigate(`/archive/${materialId}`);
+    }
+  };
+
+  // 퀴즈 시작 핸들러
+  const handleQuizStart = () => {
+    if (materialId) {
+      navigate(`/quiz/${materialId}`);
     }
   };
 
@@ -374,16 +391,6 @@ const DocumentAnalysis = () => {
   return (
     <div className="min-h-screen bg-[#18181b]">
       <div className="max-w-7xl mx-auto px-2 py-8">
-        {file && (
-          <div className="flex justify-end mb-4">
-            <button
-              onClick={handleBackToList}
-              className="px-4 py-2 bg-[#346aff] text-white rounded-lg font-semibold hover:bg-[#2d5cd9] transition"
-            >
-              강의자료 목록으로
-            </button>
-          </div>
-        )}
         {!file ? (
           <div className="flex flex-col items-center justify-center h-[70vh]">
             <button
@@ -401,80 +408,78 @@ const DocumentAnalysis = () => {
             />
           </div>
         ) : (
-          <div className="flex gap-6 min-h-[600px]" style={{ height: '70vh' }}>
-            {/* 좌측 썸네일 리스트 */}
-            <div className="w-1/12 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center overflow-y-auto hide-scrollbar">
-              {Array.from({ length: numPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => !loading && handlePageSelect(page)}
-                  disabled={loading}
-                  className={`w-full py-2 rounded-lg border transition mb-2 ${
-                    selectedPage === page
-                      ? 'border-[#346aff] bg-[#18181b] font-bold text-[#346aff]'
-                      : 'border-[#23232a] bg-[#23232a] text-[#bbbbbb] hover:bg-[#18181b]'
-                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {/* 썸네일 이미지 materialId+page로 직접 */}
-                  <img
-                    src={getSlideImageUrl(materialId, page)}
-                    alt={`썸네일 ${page}`}
-                    style={{ width: '100%', maxHeight: 60, objectFit: 'contain', borderRadius: 6, marginBottom: 2 }}
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                  {page}
-                </button>
-              ))}
-              <div className="mt-auto w-full flex flex-col gap-2">
+          <div className="flex gap-6 min-h-[600px]" style={{height: '70vh'}}>
+            {/* 좌측 영역 - 썸네일/페이지 리스트 */}
+            <div className="w-1/12 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-w-[60px] min-h-[500px] overflow-y-auto hide-scrollbar">
+              <div className="mb-4 w-full">
+                <div className="flex flex-col gap-2 max-h-[calc(70vh-100px)] overflow-y-auto custom-scrollbar">
+                  {Array.from({ length: numPages }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => !loading && handlePageSelect(page)}
+                      disabled={loading}
+                      className={`flex items-center justify-center px-0 py-2 rounded-lg border transition-all w-full
+                        ${selectedPage === page ? 'border-[#346aff] bg-[#18181b] font-bold text-[#346aff] shadow' : 'border-[#23232a] bg-[#23232a] text-[#bbbbbb] hover:bg-[#18181b]'}
+                        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}
+                    >
+                      <span>{page}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-auto flex flex-col gap-2 w-full">
                 <button
                   onClick={() => handlePageSelect(Math.max(selectedPage - 1, 1))}
                   disabled={selectedPage <= 1}
-                  className="w-full py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg disabled:opacity-50"
+                  className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                 >
                   <FaChevronLeft />
                 </button>
                 <button
                   onClick={() => handlePageSelect(Math.min(selectedPage + 1, numPages))}
                   disabled={selectedPage >= numPages}
-                  className="w-full py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg disabled:opacity-50"
+                  className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                 >
                   <FaChevronRight />
                 </button>
               </div>
             </div>
 
-            {/* 중앙 이미지 뷰어 */}
-            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center overflow-auto">
-              <div className="mb-2 text-[#bbbbbb] text-sm">
-                페이지 {selectedPage} / {numPages}
-              </div>
-              <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center">
-                <img
-                  src={getSlideImageUrl(materialId, selectedPage)}
-                  alt={`슬라이드 ${selectedPage}`}
-                  style={{ maxWidth: '100%', maxHeight: '600px', borderRadius: '12px' }}
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
+            {/* 중앙 - 슬라이드 이미지 뷰어 */}
+            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-h-[500px] overflow-y-auto">
+              <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
+              <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar">
+                {analysis && analysis.image_url ? (
+                  <img
+                    src={`http://localhost:3000${analysis.image_url}`}
+                    alt={`슬라이드 ${selectedPage} 이미지`}
+                    style={{ maxWidth: '100%', maxHeight: '600px', borderRadius: '12px' }}
+                  />
+                ) : (
+                  <div className="text-[#bbbbbb] text-center w-full h-full flex items-center justify-center">
+                    슬라이드 이미지를 불러오는 중이거나, 아직 분석 결과가 없습니다.
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 우측 분석 결과 */}
-            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col overflow-auto custom-scrollbar">
+            {/* 우측 영역 - 분석 결과 및 학습 정보 */}
+            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col min-h-[500px] overflow-y-auto">
+              {/* Badge 영역 */}
               <div className="flex gap-2 mb-4 flex-wrap">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-900/30 text-orange-400 text-xs">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-900/30 text-orange-400 text-xs font-semibold">
                   <FaFire className="mr-1" /> {selectedPage}/{numPages} 페이지
                 </span>
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs font-semibold">
                   <FaClock className="mr-1" /> {totalStudyTime}분 학습
                 </span>
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
                   <FaChartLine className="mr-1" /> 진도율 {progress}%
                 </span>
               </div>
-              <div className="mb-2 text-xs text-[#bbbbbb]">
-                이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초
-              </div>
-
+              {/* 페이지별 학습 시간 */}
+              <div className="mb-2 text-xs text-[#bbbbbb]">이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초</div>
               <h2 className="text-lg font-bold mb-2 text-white">분석 결과</h2>
               {loading && !analysis ? (
                 <div className="flex flex-col items-center justify-center h-40">
@@ -482,47 +487,43 @@ const DocumentAnalysis = () => {
                   <div className="text-[#bbbbbb] mt-2">요약 생성 중...</div>
                 </div>
               ) : analysis ? (
-                <div className="space-y-3 text-[#bbbbbb] text-sm">
+                <div className="space-y-3">
                   {analysis.slide_title && (
                     <div>
-                      <h3 className="font-semibold text-white">제목</h3>
-                      <p>{analysis.slide_title}</p>
+                      <h3 className="font-semibold mb-1 text-white">제목</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.slide_title}</p>
                     </div>
                   )}
                   {analysis.summary && (
                     <div>
-                      <h3 className="font-semibold text-white">요약</h3>
-                      <p>{removeLabel(analysis.summary)}</p>
+                      <h3 className="font-semibold mb-1 text-white">요약</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
                     </div>
                   )}
                   {analysis.explanation && (
                     <div>
-                      <h3 className="font-semibold text-white">개념 설명</h3>
-                      <p>{analysis.explanation}</p>
+                      <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
+                      <p className="text-[#bbbbbb] text-sm">{analysis.explanation}</p>
                     </div>
                   )}
-                  {analysis.main_keywords && (
+                  {analysis.main_keywords && typeof analysis.main_keywords === 'string' && (
                     <div>
-                      <h3 className="font-semibold text-white">주요 키워드</h3>
+                      <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
                       <div className="flex flex-wrap gap-2">
-                        {analysis.main_keywords.split(',').map((kw, i) => (
-                          <span key={i} className="px-2 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs">
-                            {kw.trim()}
-                          </span>
-                        ))}
+                        {analysis.main_keywords.split(',')
+                          .filter(keyword => keyword.trim())
+                          .map((keyword, idx) => (
+                            <span key={idx} className="px-2 py-1 rounded-full text-sm bg-blue-900/30 text-blue-400">
+                              {keyword.trim()}
+                            </span>
+                          ))}
                       </div>
                     </div>
                   )}
                   {analysis.important_sentences && (
                     <div>
-                      <h3 className="font-semibold text-white">중요 문장</h3>
-                      <p className="whitespace-pre-line">{analysis.important_sentences}</p>
-                    </div>
-                  )}
-                  {analysis.image_description !== undefined && (
-                    <div>
-                      <h3 className="font-semibold text-white">이미지 설명</h3>
-                      <p>{removeLabel(analysis.image_description)}</p>
+                      <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
+                      <p className="text-[#bbbbbb] text-sm whitespace-pre-line">{analysis.important_sentences}</p>
                     </div>
                   )}
                 </div>
@@ -533,16 +534,15 @@ const DocumentAnalysis = () => {
           </div>
         )}
 
-        {/* 기출문제 시작 버튼 */}
         {file && (
-          <div className="fixed left-0 right-0 bottom-0 bg-[#23232a] shadow-lg py-4">
+          <div className="fixed left-0 right-0 bottom-0 bg-[#23232a] shadow-lg z-50 py-4">
             <div className="max-w-3xl mx-auto flex items-center justify-between px-6">
               <span className="text-lg text-white font-semibold">
                 이 자료를 기반으로 문제를 풀어보시겠습니까?
               </span>
               <button
-                onClick={() => navigate('/problem-solving', { state: { materialId, slides: Object.values(slideAnalyses) } })}
-                className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg hover:bg-[#16a34a] transition"
+                onClick={handleQuizStart}
+                className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg shadow-lg hover:bg-[#16a34a] transition"
               >
                 기출문제 풀러가기
               </button>
@@ -554,4 +554,4 @@ const DocumentAnalysis = () => {
   );
 };
 
-export default DocumentAnalysis;
+export default DocumentAnalysis; 

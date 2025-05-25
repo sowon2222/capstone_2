@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user
 from database import get_db
 from schemas import QuizGenerationRequest, QuizOptions, QuizGenerationResponse, RegisterQuestionRequest
-from models import Question, QuestionAttempt, Keyword, WeakKeywordLog, Slide
+from models import Question, QuestionAttempt, Keyword, WeakKeywordLog
 import openai, json, re
 from typing import List, Optional
 from sqlalchemy import text
@@ -88,26 +88,19 @@ def generate_quiz(
         content = response.choices[0].message['content']
         content = re.sub(r"^```json\\s*|\\s*```$", "", content.strip(), flags=re.MULTILINE)
         parsed = json.loads(content)
+        # 난이도 정보도 함께 반환
         parsed["difficulty"] = difficulty
 
         # 주관식 문제의 경우 correct_answer가 없을 수 있으므로 처리
         if parsed.get("type") == "주관식" and not parsed.get("correct_answer"):
             parsed["correct_answer"] = "정답 없음"  # 임시 정답 설정
 
-        # 객관식 문제의 경우 content에 전체 JSON을 저장 (options, correct_answer 포함)
-        if parsed.get("type") == "객관식":
-            content_to_save = json.dumps(parsed, ensure_ascii=False)
-            answer_to_save = parsed.get("correct_answer") or "정답 없음"
-        else:
-            content_to_save = parsed.get("question")
-            answer_to_save = parsed.get("correct_answer") or "정답 없음"
-
         # DB에 저장 (slide_id, keyword_id 명시적으로 저장)
         question = Question(
             slide_id=slide_id,
             question_type=parsed.get("type"),
-            content=content_to_save,
-            answer=answer_to_save,  # null 방지
+            content=parsed.get("question"),
+            answer=parsed.get("correct_answer") or "정답 없음",  # null 방지
             explanation=parsed.get("explanation"),
             difficulty=difficulty
         )
@@ -273,118 +266,3 @@ def generate_weak_gpt_quiz(user_id: int, top_n: int = 1, db: Session = Depends(g
     except Exception as e:
         print("파싱 실패 content:", content)
         raise HTTPException(status_code=500, detail=f"GPT 문제 생성 실패: {str(e)} / content: {content}")
-
-
-@router.post("/quiz/generate-material")
-def generate_material_quiz(
-    material_id: int = Body(...),
-    db: Session = Depends(get_db)
-):
-    # 1. 모든 슬라이드 정보 가져오기
-    slides = db.query(Slide).filter(Slide.material_id == material_id).all()
-    if not slides:
-        raise HTTPException(status_code=404, detail="해당 강의자료의 슬라이드가 없습니다.")
-    # 2. 10개 이하만 랜덤 선택
-    selected_slides = random.sample(slides, min(10, len(slides)))
-    generated_questions = []
-    for slide in selected_slides:
-        # 키워드 추출 (main_keywords: str -> list)
-        keywords = []
-        keyword_id = None
-        if slide.main_keywords:
-            keywords = [k.strip() for k in slide.main_keywords.split(',') if k.strip()]
-            # 첫 번째 키워드 id 조회 (없으면 None)
-            if keywords:
-                keyword_obj = db.query(Keyword).filter(Keyword.keyword_name == keywords[0]).first()
-                if keyword_obj:
-                    keyword_id = keyword_obj.keyword_id
-        # 문제 생성 프롬프트 재사용
-        try:
-            result = generate_quiz(
-                slide_id=slide.slide_id,
-                keyword_id=keyword_id or 0,
-                slide_title=slide.slide_title or '',
-                concept_explanation=slide.concept_explanation or '',
-                image_description=None,
-                keywords=keywords,
-                important_sentences=(slide.important_sentences or '').split('\n'),
-                slide_summary=slide.summary or '',
-                db=db
-            )
-            generated_questions.append(result)
-        except Exception as e:
-            print(f"문제 생성 실패 (slide_id={slide.slide_id}):", e)
-    return {"questions": generated_questions}
-
-@router.post("/quiz/generate-bulk")
-def generate_bulk_quiz(
-    material_id: int = Body(...),
-    slide_ids: list = Body(...),
-    db: Session = Depends(get_db)
-):
-    # slide_ids로 슬라이드 정보 조회
-    slides = db.query(Slide).filter(Slide.slide_id.in_(slide_ids)).all()
-    if not slides:
-        raise HTTPException(status_code=404, detail="해당 슬라이드가 없습니다.")
-    # 최대 10개 랜덤 선택
-    selected_slides = random.sample(slides, min(10, len(slides)))
-    generated_questions = []
-    for slide in selected_slides:
-        keywords = []
-        keyword_id = None
-        if slide.main_keywords:
-            keywords = [k.strip() for k in slide.main_keywords.split(',') if k.strip()]
-            if keywords:
-                keyword_obj = db.query(Keyword).filter(Keyword.keyword_name == keywords[0]).first()
-                if keyword_obj:
-                    keyword_id = keyword_obj.keyword_id
-        try:
-            result = generate_quiz(
-                slide_id=slide.slide_id,
-                keyword_id=keyword_id or 0,
-                slide_title=slide.slide_title or '',
-                concept_explanation=slide.concept_explanation or '',
-                image_description=None,
-                keywords=keywords,
-                important_sentences=(slide.important_sentences or '').split('\n'),
-                slide_summary=slide.summary or '',
-                db=db
-            )
-            generated_questions.append(result)
-        except Exception as e:
-            print(f"문제 생성 실패 (slide_id={slide.slide_id}):", e)
-    return {"questions": generated_questions}
-
-@router.get("/quiz/material-questions")
-def get_material_questions(material_id: int, db: Session = Depends(get_db)):
-    slides = db.query(Slide).filter(Slide.material_id == material_id).all()
-    slide_ids = [s.slide_id for s in slides]
-    questions = db.query(Question).filter(Question.slide_id.in_(slide_ids)).all()
-    result = []
-    for q in questions:
-        q_dict = {
-            "question_id": q.question_id,
-            "slide_id": q.slide_id,
-            "type": q.question_type,
-            "difficulty": q.difficulty,
-            "explanation": q.explanation
-        }
-        # 객관식 문제의 경우 content에 options, correct_answer 포함
-        if q.question_type == "객관식":
-            try:
-                content_json = json.loads(q.content)
-                q_dict["content"] = content_json.get("question")
-                if "options" in content_json:
-                    q_dict["options"] = [v for k, v in sorted(content_json["options"].items())]
-                    # answer가 'A' 등 알파벳이면 인덱스로 변환
-                    if isinstance(q.answer, str) and q.answer in content_json["options"]:
-                        q_dict["correct"] = list(content_json["options"].keys()).index(q.answer)
-                    elif "correct_answer" in content_json and content_json["correct_answer"] in content_json["options"]:
-                        q_dict["correct"] = list(content_json["options"].keys()).index(content_json["correct_answer"])
-            except Exception:
-                q_dict["content"] = q.content
-        else:
-            q_dict["content"] = q.content
-            q_dict["answer"] = q.answer
-        result.append(q_dict)
-    return result
