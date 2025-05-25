@@ -2,13 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
-import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle } from 'react-icons/fa';
+import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle, FaSearch } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
 import '../styles/ProblemSolving.css';
 
 const DocumentAnalysis = () => {
   const [file, setFile] = useState(null);
-  const [numPages, setNumPages] = useState(0); // 초기값 0
   const [numPages, setNumPages] = useState(0); // 초기값 0
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPage, setSelectedPage] = useState(1);
@@ -143,14 +142,11 @@ const DocumentAnalysis = () => {
   const handlePageSelect = async (pageNumber) => {
     if (!materialId) {
       alert('강의자료가 업로드되지 않았습니다.');
-    if (!materialId) {
-      alert('강의자료가 업로드되지 않았습니다.');
       return;
     }
     // 신규 분석 요청 제거: 서버에서 자동 생성됨
     setSelectedPage(pageNumber);
     setCurrentPage(pageNumber);
-    setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
     setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
     setLoading(true);
     try {
@@ -242,7 +238,7 @@ const DocumentAnalysis = () => {
   const totalStudyTime = Math.floor(
     Object.values(pageTimes).reduce((a, b) => a + (b || 0), 0) / 60
   );
-  // 현재 페이지 학습 시간(더미)
+  // 현재 페이지 학습 시간
   const currentPageTime = timer;
   // 문제 출제 여부
   const hasProblem = false; // 더미 데이터 제거
@@ -254,7 +250,6 @@ const DocumentAnalysis = () => {
       setMaterialId(stateMaterialId);
       // 서버에서 자료 정보(페이지 수 등) 불러오기
       const token = localStorage.getItem('token');
-      fetch(`http://localhost:3000/archive/${stateMaterialId}`, {
       fetch(`http://localhost:3000/archive/${stateMaterialId}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -291,10 +286,6 @@ const DocumentAnalysis = () => {
 
   // --- 진도율/총 학습시간 계산 ---
   const progress = Math.round((viewedPages.length / numPages) * 100);
-  const totalStudyTime = Math.floor(
-    Object.values(pageTimes).reduce((a,b) => a + (b||0), 0) / 60
-  );
-  const currentPageTime = timer;
 
   // 이미지 URL 생성 함수 (포트 8000)
   const getSlideImageUrl = (materialId, slideNumber) =>
@@ -420,31 +411,9 @@ const DocumentAnalysis = () => {
                 </div>
               </div>
               <div className="mt-auto flex flex-col gap-2 w-full">
-          <div className="flex gap-6 min-h-[600px]" style={{height: '70vh'}}>
-            {/* 좌측 영역 - 썸네일/페이지 리스트 */}
-            <div className="w-1/12 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-w-[60px] min-h-[500px] overflow-y-auto hide-scrollbar">
-              <div className="mb-4 w-full">
-                <div className="flex flex-col gap-2 max-h-[calc(70vh-100px)] overflow-y-auto custom-scrollbar">
-                  {Array.from({ length: numPages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => !loading && handlePageSelect(page)}
-                      disabled={loading}
-                      className={`flex items-center justify-center px-0 py-2 rounded-lg border transition-all w-full
-                        ${selectedPage === page ? 'border-[#346aff] bg-[#18181b] font-bold text-[#346aff] shadow' : 'border-[#23232a] bg-[#23232a] text-[#bbbbbb] hover:bg-[#18181b]'}
-                        ${loading ? 'opacity-50 cursor-not-allowed' : ''}
-                      `}
-                    >
-                      <span>{page}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-auto flex flex-col gap-2 w-full">
                 <button
                   onClick={() => handlePageSelect(Math.max(selectedPage - 1, 1))}
                   disabled={selectedPage <= 1}
-                  className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                   className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                 >
                   <FaChevronLeft />
@@ -452,7 +421,6 @@ const DocumentAnalysis = () => {
                 <button
                   onClick={() => handlePageSelect(Math.min(selectedPage + 1, numPages))}
                   disabled={selectedPage >= numPages}
-                  className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                   className="w-full flex items-center justify-center px-4 py-2 bg-[#23232a] text-[#bbbbbb] rounded-lg border border-[#23232a] hover:bg-[#18181b] disabled:opacity-50"
                 >
                   <FaChevronRight />
@@ -475,46 +443,23 @@ const DocumentAnalysis = () => {
                     슬라이드 이미지를 불러오는 중이거나, 아직 분석 결과가 없습니다.
                   </div>
                 )}
-            {/* 중앙 - 슬라이드 이미지 뷰어 */}
-            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-h-[500px] overflow-y-auto">
-              <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
-              <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar">
-                {analysis && analysis.image_url ? (
-                  <img
-                    src={`http://localhost:3000${analysis.image_url}`}
-                    alt={`슬라이드 ${selectedPage} 이미지`}
-                    style={{ maxWidth: '100%', maxHeight: '600px', borderRadius: '12px' }}
-                  />
-                ) : (
-                  <div className="text-[#bbbbbb] text-center w-full h-full flex items-center justify-center">
-                    슬라이드 이미지를 불러오는 중이거나, 아직 분석 결과가 없습니다.
-                  </div>
-                )}
               </div>
             </div>
 
             {/* 우측 영역 - 분석 결과 및 학습 정보 */}
             <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col min-h-[500px] overflow-y-auto">
               {/* Badge 영역 */}
-            {/* 우측 영역 - 분석 결과 및 학습 정보 */}
-            <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col min-h-[500px] overflow-y-auto">
-              {/* Badge 영역 */}
               <div className="flex gap-2 mb-4 flex-wrap">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-900/30 text-orange-400 text-xs font-semibold">
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-900/30 text-orange-400 text-xs font-semibold">
                   <FaFire className="mr-1" /> {selectedPage}/{numPages} 페이지
                 </span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs font-semibold">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs font-semibold">
                   <FaClock className="mr-1" /> {totalStudyTime}분 학습
                 </span>
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
                   <FaChartLine className="mr-1" /> 진도율 {progress}%
                 </span>
               </div>
-              {/* 페이지별 학습 시간 */}
-              <div className="mb-2 text-xs text-[#bbbbbb]">이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초</div>
               {/* 페이지별 학습 시간 */}
               <div className="mb-2 text-xs text-[#bbbbbb]">이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초</div>
               <h2 className="text-lg font-bold mb-2 text-white">분석 결과</h2>
@@ -525,11 +470,8 @@ const DocumentAnalysis = () => {
                 </div>
               ) : analysis ? (
                 <div className="space-y-3">
-                <div className="space-y-3">
                   {analysis.slide_title && (
                     <div>
-                      <h3 className="font-semibold mb-1 text-white">제목</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.slide_title}</p>
                       <h3 className="font-semibold mb-1 text-white">제목</h3>
                       <p className="text-[#bbbbbb] text-sm">{analysis.slide_title}</p>
                     </div>
@@ -538,31 +480,18 @@ const DocumentAnalysis = () => {
                     <div>
                       <h3 className="font-semibold mb-1 text-white">요약</h3>
                       <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
-                      <h3 className="font-semibold mb-1 text-white">요약</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
                     </div>
                   )}
                   {analysis.explanation && (
                     <div>
                       <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
                       <p className="text-[#bbbbbb] text-sm">{analysis.explanation}</p>
-                      <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.explanation}</p>
                     </div>
                   )}
                   {analysis.main_keywords && typeof analysis.main_keywords === 'string' && (
-                  {analysis.main_keywords && typeof analysis.main_keywords === 'string' && (
                     <div>
                       <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
-                      <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
                       <div className="flex flex-wrap gap-2">
-                        {analysis.main_keywords.split(',')
-                          .filter(keyword => keyword.trim())
-                          .map((keyword, idx) => (
-                            <span key={idx} className="px-2 py-1 rounded-full text-sm bg-blue-900/30 text-blue-400">
-                              {keyword.trim()}
-                            </span>
-                          ))}
                         {analysis.main_keywords.split(',')
                           .filter(keyword => keyword.trim())
                           .map((keyword, idx) => (
@@ -577,8 +506,6 @@ const DocumentAnalysis = () => {
                     <div>
                       <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
                       <p className="text-[#bbbbbb] text-sm whitespace-pre-line">{analysis.important_sentences}</p>
-                      <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
-                      <p className="text-[#bbbbbb] text-sm whitespace-pre-line">{analysis.important_sentences}</p>
                     </div>
                   )}
                 </div>
@@ -591,14 +518,11 @@ const DocumentAnalysis = () => {
 
         {file && (
           <div className="fixed left-0 right-0 bottom-0 bg-[#23232a] shadow-lg z-50 py-4">
-          <div className="fixed left-0 right-0 bottom-0 bg-[#23232a] shadow-lg z-50 py-4">
             <div className="max-w-3xl mx-auto flex items-center justify-between px-6">
               <span className="text-lg text-white font-semibold">
                 이 자료를 기반으로 문제를 풀어보시겠습니까?
               </span>
               <button
-                onClick={handleQuizStart}
-                className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg shadow-lg hover:bg-[#16a34a] transition"
                 onClick={handleQuizStart}
                 className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg shadow-lg hover:bg-[#16a34a] transition"
               >
@@ -612,5 +536,4 @@ const DocumentAnalysis = () => {
   );
 };
 
-export default DocumentAnalysis; 
 export default DocumentAnalysis; 
