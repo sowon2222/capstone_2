@@ -1,13 +1,6 @@
 import React from 'react';
 
 function BlockTimeline({ sessions }) {
-  // 오늘 날짜 구하기 (YYYY-MM-DD)
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  const todayStr = `${yyyy}-${mm}-${dd}`;
-
   // 8~18시, 3분 단위 20칸
   const hours = Array.from({ length: 11 }, (_, i) => i + 8);
   const BLOCKS_PER_HOUR = 20;
@@ -19,17 +12,17 @@ function BlockTimeline({ sessions }) {
     hourBlocks[h] = Array(BLOCKS_PER_HOUR).fill(null);
   });
 
-  // 오늘 날짜만 필터링
-  const filteredSessions = (sessions || []).filter(
-    s => s.start_time && s.start_time.startsWith(todayStr)
-  );
+  // 날짜 필터링 제거 - 모든 세션 표시
+  const filteredSessions = sessions || [];
 
   filteredSessions.forEach(s => {
+    // 각 세션의 날짜(YYYY-MM-DD)를 추출
+    const sessionDateStr = s.start_time.slice(0, 10);
     const start = new Date(s.start_time);
     const end = s.end_time ? new Date(s.end_time) : new Date(s.start_time);
     for (let h = 8; h <= 18; h++) {
       for (let i = 0; i < BLOCKS_PER_HOUR; i++) {
-        const blockStart = new Date(`${todayStr}T${String(h).padStart(2, '0')}:${String(i * 3).padStart(2, '0')}:00`);
+        const blockStart = new Date(`${sessionDateStr}T${String(h).padStart(2, '0')}:${String(i * 3).padStart(2, '0')}:00`);
         const blockEnd = new Date(blockStart);
         blockEnd.setMinutes(blockEnd.getMinutes() + BLOCK_MINUTES);
         // 블록이 세션과 겹치면 색칠

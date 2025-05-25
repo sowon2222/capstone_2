@@ -253,6 +253,20 @@ app.post('/api/study-time', authenticateToken, async (req, res) => {
     }
 });
 
+// 오늘의 학습 시간(누적) API
+app.get('/api/study-time/total', authenticateToken, async (req, res) => {
+    const userId = req.user.user_id;
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+        const [row] = await pool.query(
+            'SELECT total_time FROM daily_study_time WHERE user_id = ? AND study_date = ?',
+            [userId, today]
+        );
+        res.json({ total_time: row ? Number(row.total_time) : 0 });
+    } catch (err) {
+        res.status(500).json({ error: '오늘의 학습 시간 조회 오류' });
+    }
+});
 
 // 특정 슬라이드 요약 API
 app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, async (req, res) => {
@@ -440,6 +454,7 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
     }
 });
 
+
 // 전체 강의자료 요약 API
 app.post('/archive/:lecture_id/summary', authenticateToken, async (req, res) => {
     const materialId = req.params.lecture_id;
@@ -567,81 +582,6 @@ app.get('/api/study-intensity/month', authenticateToken, async (req, res) => {
     res.json({ data: rows });
 });
 
-// 오늘의 학습 시간 누적 API
-app.post('/api/study-time', authenticateToken, async (req, res) => {
-    const userId = req.user.user_id;
-    const { duration } = req.body; // 초 단위
-    const today = new Date().toISOString().slice(0, 10);
-
-    try {
-        // 오늘 기록이 있으면 누적, 없으면 새로 생성
-        const [row] = await pool.query(
-            'SELECT * FROM daily_study_time WHERE user_id = ? AND study_date = ?',
-            [userId, today]
-        );
-        if (row) {
-            await pool.query(
-                'UPDATE daily_study_time SET total_time = total_time + ? WHERE user_id = ? AND study_date = ?',
-                [duration, userId, today]
-            );
-            console.log(`[UPDATE] daily_study_time: user_id=${userId}, date=${today}, +${duration}초`);
-        } else {
-            await pool.query(
-                'INSERT INTO daily_study_time (user_id, study_date, total_time) VALUES (?, ?, ?)',
-                [userId, today, duration]
-            );
-            console.log(`[INSERT] daily_study_time: user_id=${userId}, date=${today}, duration=${duration}`);
-        }
-
-        // intensity 점수 계산
-        const sql = `
-            SELECT 
-                d.study_date,
-                ROUND(
-                    (IFNULL(MAX(spl.total_progress),0) * 0.35) +     -- 오늘 진도율(%) 35%
-                    (COUNT(DISTINCT qa.question_id) * 0.25) +         -- 문제 풀이 수 25%
-                    (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) * 0.20) +  -- 정답 수 20%
-                    (IFNULL(d.total_time,0) * 0.20),                 -- 학습 시간 20%
-                    2
-                ) AS intensity_score
-            FROM daily_study_time d
-            LEFT JOIN study_progress_log spl ON d.user_id = spl.user_id AND d.study_date = spl.study_date
-            LEFT JOIN question_attempts qa ON d.user_id = qa.user_id AND d.study_date = qa.attempt_date
-            LEFT JOIN questions q ON qa.question_id = q.question_id
-            LEFT JOIN lecture_materials lm ON d.user_id = lm.user_id AND DATE(lm.created_at) = d.study_date
-            WHERE d.user_id = ? AND d.study_date = CURDATE()
-            GROUP BY d.study_date
-        `;
-        const [row2] = await pool.query(sql, [userId]);
-        console.log('intensity row2:', row2);
-        const intensityScore = row2 && row2.intensity_score ? row2.intensity_score : 0;
-
-        // intensity_log에 무조건 INSERT/UPDATE
-        const [existing] = await pool.query(
-            'SELECT * FROM study_intensity_log WHERE user_id = ? AND study_date = ?',
-            [userId, today]
-        );
-        if (existing) {
-            await pool.query(
-                'UPDATE study_intensity_log SET intensity_score = ? WHERE log_id = ?',
-                [intensityScore, existing.log_id]
-            );
-            console.log(`[UPDATE] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
-        } else {
-            await pool.query(
-                'INSERT INTO study_intensity_log (user_id, study_date, intensity_score) VALUES (?, ?, ?)',
-                [userId, today, intensityScore]
-            );
-            console.log(`[INSERT] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error('학습 시간 저장 오류:', err);
-        res.status(500).json({ error: '학습 시간 저장 오류' });
-    }
-});
-
 // 특정 강의자료의 슬라이드 리스트 반환
 app.get('/slides/material/:material_id', authenticateToken, async (req, res) => {
     const materialId = req.params.material_id;
@@ -670,6 +610,73 @@ app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
         res.json(keywords);
     } catch (err) {
         res.status(500).json({ error: '키워드 리스트 조회 오류' });
+    }
+});
+
+// 랭킹 API
+app.get('/api/ranking', authenticateToken, async (req, res) => {
+    const userId = req.user.user_id;
+    try {
+        // 전체 사용자 수 조회
+        const [totalUsers] = await pool.query('SELECT COUNT(*) as total FROM users');
+        const totalUsersNum = Number(totalUsers.total);
+
+        // 사용자의 학습 강도 점수 조회
+        const [userScore] = await pool.query(
+            'SELECT intensity_score FROM study_intensity_log WHERE user_id = ? ORDER BY study_date DESC LIMIT 1',
+            [userId]
+        );
+        const userScoreVal = userScore ? Number(userScore.intensity_score) : 0;
+
+        // 사용자보다 높은 점수를 가진 사용자 수 조회
+        const [higherScores] = await pool.query(
+            'SELECT COUNT(DISTINCT user_id) as count FROM study_intensity_log WHERE intensity_score > ?',
+            [userScoreVal]
+        );
+        const higherScoresNum = Number(higherScores.count);
+
+        const rank = higherScoresNum + 1;
+        const percentile = totalUsersNum > 0 ? Math.round((rank / totalUsersNum) * 100) : 100;
+
+        res.json({
+            rank,
+            percentile,
+            total_users: totalUsersNum
+        });
+    } catch (err) {
+        console.error('랭킹 조회 오류:', err);
+        res.status(500).json({ error: '랭킹 조회 오류' });
+    }
+});
+
+// 피드백 API
+app.get('/api/feedback', authenticateToken, async (req, res) => {
+    const userId = req.user.user_id;
+    try {
+        // 가장 오답률이 높은 키워드 조회
+        const [weakKeyword] = await pool.query(
+            `SELECT k.keyword_name, COUNT(*) as incorrect_count
+             FROM weak_keyword_logs wkl
+             JOIN keywords k ON wkl.keyword_id = k.keyword_id
+             WHERE wkl.user_id = ? AND wkl.is_incorrect = TRUE
+             GROUP BY k.keyword_id
+             ORDER BY incorrect_count DESC
+             LIMIT 1`,
+            [userId]
+        );
+        
+        if (weakKeyword) {
+            res.json({
+                message: `📈 오답률이 높은 자료는 ${weakKeyword.keyword_name} 영역입니다. "이런 부분을 더 공부하세요!"`
+            });
+        } else {
+            res.json({
+                message: "🎉 아직 모든 영역에서 좋은 성과를 보이고 있습니다!"
+            });
+        }
+    } catch (err) {
+        console.error('피드백 조회 오류:', err);
+        res.status(500).json({ error: '피드백 조회 오류' });
     }
 });
 

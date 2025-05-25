@@ -1,8 +1,9 @@
 import os
 from dotenv import load_dotenv
-from fastapi import APIRouter, Query, FastAPI
+from fastapi import APIRouter, Query, FastAPI, Body
 import pymysql
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -226,15 +227,38 @@ def focus_timeline(
 ):
     conn = get_db()
     try:
+        # period_end를 하루 더해줌
+        period_end_dt = datetime.strptime(period_end, '%Y-%m-%d') + timedelta(days=1)
+        period_end_str = period_end_dt.strftime('%Y-%m-%d')
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT start_time, end_time, duration, is_interrupted
                 FROM focus_sessions
-                WHERE user_id = %s AND start_time BETWEEN %s AND %s
+                WHERE user_id = %s AND start_time >= %s AND start_time < %s
                 ORDER BY start_time
-            """, (user_id, period_start, period_end))
+            """, (user_id, period_start, period_end_str))
             rows = cursor.fetchall()
         return rows
+    finally:
+        conn.close()
+
+@router.post("/report/focus-session-create")
+def focus_session_create(
+    user_id: int = Body(...),
+    start_time: str = Body(...),
+    end_time: str = Body(...),
+    duration: int = Body(...),
+    is_interrupted: bool = Body(False)
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO focus_sessions (user_id, start_time, end_time, duration, is_interrupted)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, start_time, end_time, duration, is_interrupted))
+            conn.commit()
+        return {"success": True}
     finally:
         conn.close()
 

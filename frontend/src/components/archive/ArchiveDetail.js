@@ -22,13 +22,6 @@ const ArchiveDetail = ({ archive, onBack }) => {
       .then(res => res.json())
       .then(data => setSlides(data.slides || []));
 
-    // 오답 데이터 가져오기
-    fetch(`http://localhost:3000/archive/wrong-answers/${archive.material_id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => setWrongAnswers(data.wrongAnswers || []));
-
     // 내 문제풀이 기록 가져오기
     const userId = parseJwt(token)?.user_id;
     if (userId && archive.material_id) {
@@ -37,8 +30,14 @@ const ArchiveDetail = ({ archive, onBack }) => {
       })
         .then(res => res.json())
         .then(data => {
-          console.log('attempts:', data);
-          setAttempts(data || []);
+          // 모든 문제 기록을 시간순으로 정렬
+          const sortedAttempts = data.sort((a, b) => 
+            new Date(b.attempt_date) - new Date(a.attempt_date)
+          );
+          setAttempts(sortedAttempts);
+          // 틀린 문제만 필터링하여 오답노트에 표시
+          const wrongAnswers = sortedAttempts.filter(attempt => !attempt.is_correct);
+          setWrongAnswers(wrongAnswers);
         });
     }
   }, [archive.material_id, token]);
@@ -258,7 +257,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
 
         {activeTab === 'questions' && (
           <div className="space-y-6">
-            {attempts.length > 0 ? attempts.map((attempt, idx) => {
+            {attempts.length > 0 ? attempts.map((attempt) => {
               const parsed = parseQuestionContent(attempt.question_content || attempt.content || attempt.question);
               const options = parsed.options;
               const displayAnswer = getDisplayAnswer(attempt.correct_answer || parsed.correct_answer, options);
@@ -266,7 +265,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
               const isCorrect = attempt.is_correct;
               const slideNum = attempt.slide_number || attempt.slide;
               return (
-                <div key={`${archive.material_id}-attempt-${attempt.attempt_id || idx}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
+                <div key={`${archive.material_id}-attempt-${attempt.attempt_id}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
                   <div className="flex items-center gap-3 mb-4">
                     {slideNum && (
                       <span className="px-2 py-1 text-xs rounded-full bg-[#23232a] border border-[#346aff] text-[#346aff]">슬라이드 {slideNum}에서 출제</span>
@@ -293,7 +292,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
                           <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
                           <ul className="ml-4">
                             {Object.entries(options).map(([key, value]) => (
-                              <li key={`${archive.material_id}-${attempt.attempt_id || idx}-${key}`} className="text-white">{key}. {value}</li>
+                              <li key={`${archive.material_id}-${attempt.attempt_id}-${key}`} className="text-white">{key}. {value}</li>
                             ))}
                           </ul>
                         </div>
@@ -324,28 +323,26 @@ const ArchiveDetail = ({ archive, onBack }) => {
 
         {activeTab === 'wrong-answers' && (
           <div className="space-y-6">
-            {wrongAnswers.map((wrong) => {
-              const parsed = parseQuestionContent(wrong.question_content) || {};
+            {wrongAnswers.length > 0 ? wrongAnswers.map((wrong) => {
+              const parsed = parseQuestionContent(wrong.question || wrong.question_content) || {};
               const options = parsed.options;
-              const displayUserAnswer = getDisplayAnswer(wrong.answer, options);
+              const displayUserAnswer = getDisplayAnswer(wrong.user_answer || wrong.answer, options);
               const displayCorrectAnswer = getDisplayAnswer(wrong.correct_answer, options);
-              // 정오 여부
-              const isCorrect = wrong.answer === wrong.correct_answer;
               return (
                 <div key={`${archive.material_id}-wrong-${wrong.attempt_id}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
                   <div className="flex items-center gap-3 mb-4">
                     <span className="text-sm text-[#bbbbbb]">
                       {new Date(wrong.attempt_date).toLocaleDateString('ko-KR')}
                     </span>
-                    <span className={`px-2 py-1 text-xs rounded-full ${isCorrect ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>
-                      {isCorrect ? '정답' : '오답'}
+                    <span className="px-2 py-1 text-xs rounded-full bg-red-900/80 text-red-300">
+                      오답
                     </span>
                   </div>
 
                   <div className="space-y-4">
                     <div>
                       <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">문제</h4>
-                      <p className="text-white whitespace-pre-wrap">{getQuestionText(parsed, wrong.question_content)}</p>
+                      <p className="text-white whitespace-pre-wrap">{getQuestionText(parsed, wrong.question || wrong.question_content)}</p>
                       {options && typeof options === 'object' && !Array.isArray(options) && (
                         <div>
                           <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
@@ -377,7 +374,9 @@ const ArchiveDetail = ({ archive, onBack }) => {
                   </div>
                 </div>
               );
-            })}
+            }) : (
+              <div className="text-[#bbbbbb]">틀린 문제가 없습니다.</div>
+            )}
           </div>
         )}
       </div>

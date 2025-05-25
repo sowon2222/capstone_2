@@ -5,6 +5,7 @@ import 'react-pdf/dist/esm/Page/TextLayer.css';
 import { FaUpload, FaChevronLeft, FaChevronRight, FaFire, FaClock, FaChartLine, FaQuestionCircle, FaSearch } from 'react-icons/fa';
 import { useNavigate, useLocation } from 'react-router-dom';
 import '../styles/ProblemSolving.css';
+import { parseJwt } from '../utils/jwt';
 
 const DocumentAnalysis = () => {
   const [file, setFile] = useState(null);
@@ -90,6 +91,7 @@ const DocumentAnalysis = () => {
     });
     setSlideAnalyses(analyses);
     setPendingPageSelect(1);
+    analysisStartTime.current = new Date().toISOString();
   };
 
   // --- 4) +New 클릭 ---
@@ -103,6 +105,7 @@ const DocumentAnalysis = () => {
     setCurrentPage(1);
     setSelectedPage(1);
     setAnalysis(null);
+    analysisStartTime.current = new Date().toISOString();
   };
 
   // 타이머 관리 함수들
@@ -151,6 +154,9 @@ const DocumentAnalysis = () => {
     setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
     setLoading(true);
     setIsRequestingSummary(true);
+    if (!analysisStartTime.current) {
+      analysisStartTime.current = new Date().toISOString();
+    }
     try {
       const token = localStorage.getItem('token');
       // 슬라이드 요약 요청 API 호출 (POST)
@@ -174,6 +180,7 @@ const DocumentAnalysis = () => {
 
   // --- 7) 학습 화면 → 목록으로 돌아가기 ---
   const handleBackToList = () => {
+    saveStudyTime();
     setMode('list');
     setFile(null);
     setMaterialId(null);
@@ -284,30 +291,55 @@ const DocumentAnalysis = () => {
     }
   };
 
-  const saveStudyTime = async () => {
-    if (!analysisStartTime.current) return;
-    const duration = Math.floor((Date.now() - analysisStartTime.current) / 1000); // 초 단위
+  // 집중 세션 저장 함수 (항상 is_interrupted: false)
+  const saveFocusSession = async ({ user_id, start_time, end_time, duration }) => {
     const token = localStorage.getItem('token');
-    if (duration > 0 && token) {
-      await fetch('http://localhost:3000/api/study-time', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ duration })
-      });
-    }
-    analysisStartTime.current = null; // 초기화
+    await fetch('http://localhost:8000/report/focus-session-create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        user_id,
+        start_time,
+        end_time,
+        duration,
+        is_interrupted: false // 무조건 집중 세션
+      })
+    });
   };
 
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      saveStudyTime();
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+  // 학습 시간 저장 함수 (집중 세션 1개만 저장)
+  const saveStudyTime = async () => {
+    const totalTime = Object.values({ ...pageTimes, [selectedPage]: timer }).reduce((a, b) => a + (b || 0), 0);
+    const token = localStorage.getItem('token');
+    if (totalTime > 0 && token && analysisStartTime.current) {
+      try {
+        await fetch('http://localhost:3000/api/study-time', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            duration: totalTime,
+            start_time: analysisStartTime.current,
+            end_time: new Date().toISOString()
+          })
+        });
+        const payload = parseJwt(token);
+        await saveFocusSession({
+          user_id: payload.user_id,
+          start_time: analysisStartTime.current,
+          end_time: new Date().toISOString(),
+          duration: totalTime
+        });
+      } catch (error) {
+        console.error('Error saving study time:', error);
+      }
+    }
+  };
 
   if (mode === 'list') {
     return (
