@@ -41,81 +41,105 @@ async function summarizeWithGPT(text) {
 /**
  * 슬라이드별 구조화 요약 (제목, 개념, 키워드, 중요문장, 전체요약)
  * @param {string} text - 슬라이드 OCR 결과
- * @returns {Promise<object>} - { slide_title, concept_explanation, main_keywords, important_sentences, summary }
+ * @param {string} imageUrl - 슬라이드 이미지 URL
+ * @returns {Promise<object>} - { slide_title, concept_explanation, main_keywords, important_sentences, summary, image_description }
  */
-async function summarizeSlideWithGPT(text) {
+async function summarizeSlideWithGPT(text, imageUrl = null) {
     const apiKey = process.env.OPENAI_API_KEY;
     const endpoint = 'https://api.openai.com/v1/chat/completions';
-    const prompt = `아래 슬라이드 텍스트를 분석해서 반드시 아래 형식으로 답변해줘.\n\n[1] 슬라이드 제목(소주제): (간결하게)\n[2] 개념 설명: (학습자가 이해할 수 있을정도로 자세하게게)\n[3] 주요 키워드: (쉼표로 구분, 예: 키워드1, 키워드2, ...)\n[4] 중요한 문장: (2~3개, 각 문장은 줄바꿈으로 구분)\n[5] 슬라이드 전체 요약: (3~4문장)\n\n예시:\n[1] TCP 연결 과정\n[2] TCP는 신뢰성 있는 데이터 전송을 위해 3-way handshake 과정을 거칩니다.\n[3] TCP, 3-way handshake, 연결, 데이터 전송\n[4] TCP는 신뢰성 있는 연결을 제공합니다.\n3-way handshake는 연결 설정에 사용됩니다.\n[5] TCP 연결은 3-way handshake 과정을 통해 시작되며, 이 과정은 데이터의 신뢰성 있는 전송을 보장합니다. 각 단계는 SYN, SYN-ACK, ACK 패킷을 주고받으며 연결이 성립됩니다.\n\n[슬라이드 텍스트]\n${text}`;
-    const messages = [
-        { role: "system", content: "당신은 학습자가 강의자료를 이해하기 쉽도록 요약해주는 AI입니다." },
-        { role: "user", content: prompt }
-    ];
-    try {
-        const response = await axios.post(
-            endpoint,
-            {
-                model: "gpt-3.5-turbo",
-                messages: messages,
-                max_tokens: 700,
-                temperature: 0.5
-            },
-            {
-                headers: {
-                    "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json"
-                }
-            }
-        );
-        const content = response.data.choices[0].message.content.trim();
-        // GPT 원본 답변 로그 출력
-        console.log('GPT 슬라이드 요약 원본 답변:', content);
-        // 1) Slide title: whatever follows "[1] "
-        const slide_title = (
-          content.match(/^\[1\]\s*:? ?\s*(.+)$/m) || []
-        )[1]?.trim() || '';
 
-        // 2) Concept explanation: "[2] "
-        const concept_explanation = (
-          content.match(/^\[2\]\s*:? ?\s*(.+)$/m) || []
-        )[1]?.trim() || '';
+    // 프롬프트에 [6] 이미지 설명 추가
+    const prompt = `아래 슬라이드 텍스트와 이미지를 분석해서 반드시 아래 형식으로 답변해줘.
 
-        // 3) Main keywords: "[3] "
-        const main_keywords = (
-          content.match(/^\[3\]\s*:? ?\s*(.+)$/m) || []
-        )[1]?.trim() || '';
+[1] 슬라이드 제목(소주제): (간결하게)
+[2] 개념 설명: (학습자가 처음 접해도 이해할 수 있도록, 예시와 맥락까지 포함해서 아주 자세하고 풍부하게 설명)
+[3] 주요 키워드: (쉼표로 구분)
+[4] 중요한 문장: (2~5개, 줄바꿈 구분, 핵심 개념/정의/원리/예시 등)
+[5] 슬라이드 전체 요약: (최소 10문장 이상, 최대한 자세하고 구체적으로, 배경지식·원리·활용·예시·관련 개념까지 포함해서 설명)
+[6] 이미지 설명: (해당 슬라이드에 시각 정보(도표나 그래프 등의 시각적인 정보만)가 있으면, 텍스트로만 상세하게 설명하고, 없으면 "없음")
 
-        // 4) Important sentences: lines after "[4] " until the next "[5]"
-        let important_sentences = '';
-        const impMatch = content.match(
-          /^\[4\][\s\S]*?(?=^\[5\])/m
-        );
-        if (impMatch) {
-          // strip the "[4]" label and any leading dashes or whitespace
-          important_sentences = impMatch[0]
-            .replace(/^\[4\]\s*/m, '')
-            .split('\n')
-            .map(line => line.replace(/^[-•–]\s*/, '').trim())
-            .filter(line => line)
-            .join('\n');
-        }
+[슬라이드 텍스트]
+${text}`;
 
-        // 5) Full summary: "[5] "
-        const summary = (
-          content.match(/^\[5\]\s*:? ?\s*([\s\S]+)$/m) || []
-        )[1]?.trim() || '';
-
-        console.log('파싱결과:', {
-          slide_title,
-          concept_explanation,
-          main_keywords,
-          important_sentences,
-          summary
+    const userContent = [{ type: 'text', text: prompt }];
+    if (imageUrl) {
+        console.log('[Vision] imageUrl:', imageUrl);
+        userContent.push({
+            type: 'image_url',
+            image_url: { url: imageUrl }
         });
-        return { slide_title, concept_explanation, main_keywords, important_sentences, summary };
+    }
+
+    const messages = [
+        { role: "system", content: "당신은 강의 슬라이드를 학습자 관점에서 요약·정리해주는 AI입니다." },
+        { role: "user", content: userContent }
+    ];
+
+    const modelName = process.env.OPENAI_VISION_MODEL || "gpt-4o";
+    const body = {
+        model: modelName,
+        messages,
+        max_tokens: 800,
+        temperature: 0.3
+    };
+
+    try {
+        const resp = await axios.post(endpoint, body, {
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            }
+        });
+
+        // 응답 전체 콘솔 출력
+        console.log('[Vision] OpenAI 응답:', JSON.stringify(resp.data, null, 2));
+
+        const content = resp.data.choices[0].message.content.trim();
+
+        // [1]~[6] 파싱 (대괄호 포함 정규식)
+        const slide_title = (content.match(/^[\[]1\][\s\S]*?(?=^[\[]2\])/m) || [])[0]?.replace(/^\[1\]\s*:? ?/, '').trim() || '';
+        const concept_explanation = (content.match(/^[\[]2\][\s\S]*?(?=^[\[]3\])/m) || [])[0]?.replace(/^\[2\]\s*:? ?/, '').trim() || '';
+        const main_keywords = (content.match(/^[\[]3\][\s\S]*?(?=^[\[]4\])/m) || [])[0]?.replace(/^\[3\]\s*:? ?/, '').trim() || '';
+        let important_sentences = '';
+        const impMatch = content.match(/^[\[]4\][\s\S]*?(?=^[\[]5\])/m);
+        if (impMatch) {
+            important_sentences = impMatch[0]
+                .replace(/^\[4\]\s*/m, '')
+                .replace(/^중요한 문장:?\s*/i, '')
+                .split('\n')
+                .map(line => line.replace(/^[-•–]\s*/, '').trim())
+                .filter(line => line)
+                .join('\n');
+        }
+        // summary: [5]~[6] 사이만 추출
+        let summary = '';
+        const summaryMatch = content.match(/^[\[]5\][\s\S]*?(?=^[\[]6\])/m);
+        if (summaryMatch) {
+            summary = summaryMatch[0].replace(/^\[5\]\s*:? ?/, '').trim();
+        }
+        const image_description = (content.match(/^[\[]6\]\s*:? ?([\s\S]+)$/m) || [])[1]?.trim() || '없음';
+
+        // 주요 키워드 라벨도 자동 제거
+        const main_keywords_clean = main_keywords.replace(/^주요 키워드:?\s*/i, '');
+
+        // 라벨 제거: slide_title, concept_explanation, important_sentences
+        const slide_title_clean = slide_title.replace(/^슬라이드 제목\(소주제\):?\s*/i, '');
+        const concept_explanation_clean = concept_explanation.replace(/^개념 설명:?\s*/i, '');
+        const important_sentences_clean = important_sentences.replace(/^중요한 문장:?\s*/i, '');
+
+        return {
+            slide_title: slide_title_clean,
+            concept_explanation: concept_explanation_clean,
+            main_keywords: main_keywords_clean,
+            important_sentences: important_sentences_clean,
+            summary,
+            image_description
+        };
+
     } catch (err) {
-        console.error('GPT 슬라이드 구조화 요약 오류:', err.response?.data || err.message);
-        throw err;
+        console.error('GPT Vision 요약 오류:', err.response?.data || err.message);
+        // 에러 전체를 프론트로 전달
+        return { error: err.response?.data || err.message };
     }
 }
 

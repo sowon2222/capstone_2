@@ -18,6 +18,7 @@ export default function HomePage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState('guest');
+  const [showLoginAlert, setShowLoginAlert] = useState(false);
 
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -116,12 +117,24 @@ export default function HomePage() {
                 <span className="text-2xl">📘</span> 학습중인 자료
               </span>
               <button
-                onClick={() => navigate('/document-analysis')}
+                onClick={() => {
+                  if (!token) {
+                    setShowLoginAlert(true);
+                    setTimeout(() => setShowLoginAlert(false), 2000); // 2초 후 자동 사라짐
+                    return;
+                  }
+                  navigate('/document-analysis');
+                }}
                 className="ml-2 px-4 py-1 rounded-lg bg-[#346aff] text-white text-sm font-semibold hover:bg-[#2554b0] transition"
               >
                 + New
               </button>
             </div>
+            {showLoginAlert && (
+              <div className="mt-2 text-sm font-semibold text-red-500 transition">
+                로그인 후 이용 가능합니다.
+              </div>
+            )}
             {!token ? (
               <div className="text-center min-h-20 flex items-center justify-center mt-6">로그인 후 이용 가능합니다</div>
             ) : studyingFiles.length === 0 ? (

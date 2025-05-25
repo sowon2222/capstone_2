@@ -10,6 +10,7 @@ const Tesseract = require('tesseract.js');
 const fs = require('fs');
 const { summarizeWithGPT, summarizeSlideWithGPT, summarizeMaterialWithGPT } = require('./summarizeWithGPT');
 const { fromPath } = require('pdf2pic');
+const sharp = require('sharp');
 require('dotenv').config();
 
 const app = express();
@@ -57,102 +58,6 @@ const upload = multer({
     }
 });
 
-/* 
-// 회원가입 API
-app.post('/api/register', async (req, res) => {
-    let conn;
-    try {
-        const { username, password } = req.body;
-        
-        // 입력값 검증
-        if (!username || !password) {
-            return res.status(400).json({ error: '사용자 이름과 비밀번호를 모두 입력해주세요.' });
-        }
-
-        conn = await pool.getConnection();
-        
-        // 비밀번호 해싱
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // 사용자 생성
-        const result = await conn.query(
-            'INSERT INTO users (username, password) VALUES (?, ?)',
-            [username, hashedPassword]
-        );
-        
-        res.status(201).json({ 
-            message: '회원가입이 완료되었습니다.',
-            userId: result.insertId.toString()
-        });
-        
-    } catch (err) {
-        console.error('회원가입 중 오류:', err);
-        if (err.code === 'ER_DUP_ENTRY') {
-            res.status(400).json({ error: '이미 사용 중인 사용자 이름입니다.' });
-        } else {
-            res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-        }
-    } finally {
-        if (conn) conn.release();
-    }
-});
-
-// 로그인 API
-app.post('/api/login', async (req, res) => {
-    let conn;
-    try {
-        const { username, password } = req.body;
-        
-        // 입력값 검증
-        if (!username || !password) {
-            return res.status(400).json({ error: '사용자 이름과 비밀번호를 모두 입력해주세요.' });
-        }
-
-        conn = await pool.getConnection();
-        
-        // 사용자 조회
-        const users = await conn.query(
-            'SELECT * FROM users WHERE username = ?',
-            [username]
-        );
-        
-        if (users.length === 0) {
-            return res.status(401).json({ error: '사용자 이름 또는 비밀번호가 올바르지 않습니다.' });
-        }
-        
-        const user = users[0];
-        
-        // 비밀번호 확인
-        const isValid = await bcrypt.compare(password, user.password);
-        if (!isValid) {
-            return res.status(401).json({ error: '사용자 이름 또는 비밀번호가 올바르지 않습니다.' });
-        }
-        
-        // JWT 토큰 생성 (FastAPI와 동일하게)
-        const token = jwt.sign(
-            { user_id: user.user_id, username: user.username },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h', algorithm: 'HS256' }
-        );
-        
-        res.json({
-            message: '로그인 성공',
-            token,
-            user: {
-                id: user.user_id,
-                username: user.username
-            }
-        });
-        
-    } catch (err) {
-        console.error('로그인 중 오류:', err);
-        res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-    } finally {
-        if (conn) conn.release();
-    }
-});
-
-*/ 
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -238,16 +143,26 @@ app.get('/archive/list', authenticateToken, async (req, res) => {
 app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
     try {
         const materialId = req.params.lecture_id;
+        console.log('archive 요청 materialId:', materialId);
         const slides = await pool.query(
-            'SELECT slide_number, original_text, summary FROM slides WHERE material_id = ? ORDER BY slide_number',
+            'SELECT slide_id, slide_number, original_text, summary, image_url, image_description, slide_title, concept_explanation, main_keywords, important_sentences FROM slides WHERE material_id = ? ORDER BY slide_number',
             [materialId]
         );
+        console.log('slides 결과:', slides);
         res.json({ slides: (slides || []).map(s => ({
+            slide_id: s.slide_id,
             slide_number: s.slide_number,
             original_text: s.original_text,
-            summary: s.summary
+            summary: s.summary,
+            image_url: s.image_url,
+            image_description: s.image_description,
+            slide_title: s.slide_title,
+            concept_explanation: s.concept_explanation,
+            main_keywords: s.main_keywords,
+            important_sentences: s.important_sentences
         })) });
     } catch (err) {
+        console.error('슬라이드 요약 조회 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
     }
 });
@@ -294,9 +209,22 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         // OCR
         const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
 
-        // GPT 구조화 요약
-        const gptResult = await summarizeSlideWithGPT(text);
-        // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary }
+        // 이미지를 sharp로 리사이즈(최대 1024px) 후 파일로 저장
+        // 이미지 저장 파일명: m_<materialId>_s_<slideNumber>.png
+        const customImageName = `m_${materialId}_s_${slideNumber}.png`;
+        const customImagePath = path.join(path.dirname(imagePath), customImageName);
+        const resizedBuffer = await sharp(fs.readFileSync(imagePath))
+          .resize({ width: 1024, height: 1024, fit: 'inside' })
+          .png()
+          .toBuffer();
+        fs.writeFileSync(customImagePath, resizedBuffer);
+        // 퍼블릭 URL 환경변수 사용 (ngrok 등)
+        const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+        const imageUrl = `${publicBaseUrl}/uploads/${customImageName}`;
+
+        // GPT 구조화 요약 (image_url만 전달)
+        const gptResult = await summarizeSlideWithGPT(text, imageUrl);
+        // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary, image_description }
 
         // main_keywords 처리 (문자열 → 배열)
         let mainKeywordsArr = [];
@@ -410,7 +338,8 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
                 main_keywords: gptResult.main_keywords,
                 important_sentences: gptResult.important_sentences,
                 summary: gptResult.summary,
-                image_url: `/uploads/${path.basename(imagePath)}`
+                image_url: `/uploads/${customImageName}`,
+                image_description: gptResult.image_description
             },
             slide_id: slideId,
             main_keywords: mainKeywordsArr
@@ -456,13 +385,26 @@ app.get('/', (req, res) => {
 // 진도율 저장 API
 app.post('/archive/:lecture_id/progress', authenticateToken, async (req, res) => {
     const materialId = req.params.lecture_id;
-    const { progress } = req.body;
+    // const { progress } = req.body; // 프론트에서 progress를 받아오지 않음
     try {
+        // slides 테이블에서 material_id에 해당하는 슬라이드 개수
+        const [slideCountRow] = await pool.query(
+            'SELECT COUNT(*) as cnt FROM slides WHERE material_id = ?',
+            [materialId]
+        );
+        const slideCount = Number(slideCountRow.cnt);
+        // 전체 슬라이드(page) 개수
+        const [materialRow] = await pool.query(
+            'SELECT page FROM lecture_materials WHERE material_id = ?',
+            [materialId]
+        );
+        const totalPages = Number(materialRow.page);
+        const progress = totalPages > 0 ? (slideCount / totalPages) * 100 : 0;
         await pool.query(
             'UPDATE lecture_materials SET progress = ? WHERE material_id = ? AND user_id = ?',
             [progress, materialId, req.user.user_id]
         );
-        res.json({ success: true });
+        res.json({ success: true, progress });
     } catch (err) {
         res.status(500).json({ error: '진도율 저장 오류' });
     }
