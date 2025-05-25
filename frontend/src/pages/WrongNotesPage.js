@@ -34,7 +34,18 @@ const WrongNotesPage = () => {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
     if (isNaN(d)) return '-';
-    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  // 문제 내용 파싱 함수
+  const parseQuestionContent = (content) => {
+    if (!content) return {};
+    try {
+      if (typeof content === 'object') return content;
+      return JSON.parse(content);
+    } catch {
+      return { question: content };
+    }
   };
 
   return (
@@ -47,52 +58,68 @@ const WrongNotesPage = () => {
           <div className="text-[#bbbbbb] text-center py-20">오답노트가 없습니다.</div>
         ) : (
           <div className="space-y-6">
-            {wrongNotes.filter(note => !note.is_correct).map((note, idx) => (
-              <div key={note.question_id || idx} className="bg-[#232329] rounded-xl p-6 shadow">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-medium text-white">{note.question}</h3>
-                    <span className="text-xs text-blue-400 font-semibold ml-2">
-                      문제 유형: {note.type || '알 수 없음'}
+            {wrongNotes.filter(note => !note.is_correct).map((note, idx) => {
+              const parsed = parseQuestionContent(note.question);
+              const options = parsed.options;
+              return (
+                <div key={note.question_id || idx} className="bg-[#232329] rounded-xl p-6 shadow mb-4">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-lg font-medium text-white mb-1">{parsed.question || note.question}</h3>
+                      <span className="text-xs text-blue-400 font-semibold ml-2">
+                        문제 유형: {parsed.type || note.type || '알 수 없음'}
+                      </span>
+                    </div>
+                    <span className="text-sm text-[#bbbbbb]">
+                      문제풀이 일자: {formatDate(note.attempt_date)}
                     </span>
                   </div>
-                  <span className="text-sm text-[#bbbbbb]">
-                    문제풀이 일자: {formatDate(note.attempt_date)}
-                  </span>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[#bbbbbb]">
-                      <span className="font-medium text-white">정답:</span>{' '}
-                      {getDisplayAnswer(note.correct_answer, note.options, note.type)}
-                    </p>
-                    <p className="text-[#bbbbbb]">
-                      <span className="font-medium text-white">제출한 답:</span>{' '}
-                      {getDisplayAnswer(note.user_answer, note.options, note.type)}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-[#18181B] rounded-lg">
-                    <p className="text-[#bbbbbb]">{note.explanation}</p>
-                  </div>
-                  {note.material_title && (
-                    <div className="text-xs text-[#bbbbbb]">자료명: {note.material_title}</div>
-                  )}
-                  <div>
-                    <h4 className="font-medium text-blue-300 mb-2">관련 개념</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {(note.relatedConcepts || note.keywords || []).map((concept, index) => (
-                        <span
-                          key={index}
-                          className="px-3 py-1 bg-blue-900/60 text-blue-200 rounded-full text-sm"
-                        >
-                          {concept}
-                        </span>
-                      ))}
+                  <div className="space-y-4">
+                    {options && typeof options === 'object' && !Array.isArray(options) && (
+                      <div>
+                        <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
+                        <ul className="ml-4">
+                          {Object.entries(options).map(([key, value]) => (
+                            <li key={key} className="text-white">{key}. {value}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[#bbbbbb]">
+                        <span className="font-medium text-white">정답:</span>{' '}
+                        {getDisplayAnswer(note.correct_answer || parsed.correct_answer, options, parsed.type || note.type)}
+                      </p>
+                      <p className="text-[#bbbbbb]">
+                        <span className="font-medium text-white">제출한 답:</span>{' '}
+                        {getDisplayAnswer(note.user_answer || note.answer, options, parsed.type || note.type)}
+                      </p>
+                    </div>
+                    {note.explanation || parsed.explanation ? (
+                      <div className="p-4 bg-[#18181B] rounded-lg">
+                        <p className="text-[#bbbbbb]">{note.explanation || parsed.explanation}</p>
+                      </div>
+                    ) : null}
+                    {note.material_title && (
+                      <div className="text-xs text-[#bbbbbb]">자료명: {note.material_title}</div>
+                    )}
+                    <div>
+                      <h4 className="font-medium text-blue-300 mb-2">관련 개념</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {(note.relatedConcepts || note.keywords || []).map((concept, index) => (
+                          <span
+                            key={index}
+                            className="px-3 py-1 bg-blue-900/60 text-blue-200 rounded-full text-sm"
+                          >
+                            {concept}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

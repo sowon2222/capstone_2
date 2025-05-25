@@ -73,6 +73,9 @@ const ArchiveList = ({ sortBy, sortOrder, onSelectArchive, searchQuery }) => {
                 <h3 className="text-lg font-medium text-white truncate">
                   {archive.title}
                 </h3>
+                {archive.created_at && (
+                  <span className="ml-2 text-xs text-[#bbbbbb]">({archive.created_at})</span>
+                )}
                 <div className="flex gap-2">
                   <span className="px-2 py-1 text-xs rounded-full bg-blue-900/80 text-blue-300">
                     문서분석

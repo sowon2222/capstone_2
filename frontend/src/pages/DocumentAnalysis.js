@@ -21,6 +21,8 @@ const DocumentAnalysis = () => {
   const [timer, setTimer] = useState(0);
   const timerInterval = useRef(null);
   const fileInputRef = useRef(null);
+  const [pendingPageSelect, setPendingPageSelect] = useState(null);
+  const pollingRef = useRef(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -81,7 +83,7 @@ const DocumentAnalysis = () => {
       analyses[sl.slide_number] = sl;
     });
     setSlideAnalyses(analyses);
-    setAnalysis(analyses[1] || null);
+    setPendingPageSelect(1);
   };
 
   // --- 4) +New 클릭 ---
@@ -136,23 +138,23 @@ const DocumentAnalysis = () => {
       startTimer();
       return;
     }
-    // 신규 분석 요청
-    stopTimer();
+    // 신규 분석 요청 제거: 서버에서 자동 생성됨
     setSelectedPage(pageNumber);
     setCurrentPage(pageNumber);
     setViewedPages(v => v.includes(pageNumber) ? v : [...v, pageNumber]);
     setLoading(true);
-
     try {
+      // 서버에서 슬라이드 분석 결과만 불러오기
       const token = localStorage.getItem('token');
-      const res = await fetch(
-        `http://localhost:3000/archive/${materialId}/slide/${pageNumber}/summary`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!res.ok) throw new Error();
-      const { slide } = await res.json();
-      setAnalysis(slide);
-      setSlideAnalyses(s => ({ ...s, [pageNumber]: slide }));
+      const res = await fetch(`http://localhost:3000/archive/${materialId}`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      const analyses = {};
+      (data.slides || []).forEach(sl => {
+        analyses[sl.slide_number] = sl;
+      });
+      setSlideAnalyses(analyses);
+      setAnalysis(analyses[pageNumber] || null);
       setTimer(pageTimes[pageNumber] || 0);
       startTimer();
     } catch {
@@ -164,6 +166,7 @@ const DocumentAnalysis = () => {
 
   // --- 7) 학습 화면 → 목록으로 돌아가기 ---
   const handleBackToList = () => {
+    if (pollingRef.current) clearTimeout(pollingRef.current);
     alert('학습이 종료되었습니다!');
     localStorage.removeItem('analyzeResult');
     setMode('list');
@@ -180,6 +183,7 @@ const DocumentAnalysis = () => {
     formData.append('pdf', f);
     const token = localStorage.getItem('token');
     try {
+      setLoading(true);
       const uploadRes = await fetch('http://localhost:3000/api/upload', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -196,7 +200,29 @@ const DocumentAnalysis = () => {
       setPageTimes({});
       setAnalysis(null);
       setSlideAnalyses({});
+      let found = false;
+      if (pollingRef.current) clearTimeout(pollingRef.current);
+      for (let i = 0; i < 30; i++) {
+        const res = await fetch(`http://localhost:3000/archive/${material_id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.slides && data.slides.length > 0) {
+          const analyses = {};
+          (data.slides || []).forEach(sl => {
+            analyses[sl.slide_number] = sl;
+          });
+          setSlideAnalyses(analyses);
+          setAnalysis(analyses[1] || null);
+          found = true;
+          break;
+        }
+        await new Promise(r => pollingRef.current = setTimeout(r, 1000));
+      }
+      setLoading(false);
+      if (!found) alert('슬라이드 요약 생성이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
     } catch {
+      setLoading(false);
       alert('파일 업로드 중 오류가 발생했습니다.');
     }
   };
@@ -250,6 +276,14 @@ const DocumentAnalysis = () => {
     }
   }, []);
 
+  // PDF 업로드 후 첫 슬라이드 자동 분석
+  useEffect(() => {
+    if (file && materialId && numPages > 0) {
+      handlePageSelect(1);
+    }
+    // eslint-disable-next-line
+  }, [file, materialId, numPages]);
+
   // --- 유틸: 분석 텍스트의 라벨 제거 ---
   const removeLabel = text =>
     text?.replace(/^슬라이드 전체요약:\s*/,'').replace(/^이미지 설명:\s*/,'');
@@ -263,7 +297,13 @@ const DocumentAnalysis = () => {
 
   // 이미지 URL 생성 함수 (포트 8000)
   const getSlideImageUrl = (materialId, slideNumber) =>
-    `http://localhost:8000/uploads/m_${materialId}_s_${slideNumber}.png`;
+    `http://localhost:3000/uploads/m_${materialId}_s_${slideNumber}.png`;
+
+  const handleGoToArchiveDetail = () => {
+    if (materialId) {
+      navigate(`/archive/${materialId}`);
+    }
+  };
 
   // --- 렌더링 ---
   if (mode === 'list') {
@@ -436,7 +476,7 @@ const DocumentAnalysis = () => {
               </div>
 
               <h2 className="text-lg font-bold mb-2 text-white">분석 결과</h2>
-              {loading ? (
+              {loading && !analysis ? (
                 <div className="flex flex-col items-center justify-center h-40">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#346aff] mb-2"></div>
                   <div className="text-[#bbbbbb] mt-2">요약 생성 중...</div>

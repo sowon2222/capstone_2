@@ -129,7 +129,16 @@ def submit_quiz(
 
     # 정답 비교
     if question.question_type in ['객관식', '참거짓']:
-        is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
+        import json
+        try:
+            qdata = json.loads(question.content)
+            options = qdata.get('options', {})
+        except Exception:
+            options = {}
+        is_correct = (
+            user_answer.strip().lower() == question.answer.strip().lower() or
+            user_answer.strip().lower() == options.get(question.answer, '').strip().lower()
+        )
     else:
         is_correct = (user_answer.strip().lower() == question.answer.strip().lower())
 

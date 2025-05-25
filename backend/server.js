@@ -77,6 +77,53 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+// 슬라이드 요약 생성 함수 분리
+async function generateSlideSummary(materialId, slideNumber, userId) {
+    // PDF 파일 경로 찾기
+    const [material] = await pool.query(
+        'SELECT material_name FROM lecture_materials WHERE material_id = ? AND user_id = ?',
+        [materialId, userId]
+    );
+    if (!material) throw new Error('자료 없음');
+    const pdfPath = path.join(__dirname, 'uploads', `${materialId}.pdf`);
+    // PDF → 이미지 변환
+    const pdf2picOptions = { 
+        density: 150, 
+        saveFilename: "slide", 
+        savePath: "./uploads", 
+        format: "png", 
+        width: 1200, 
+        height: 900 
+    };
+    const converter = fromPath(pdfPath, pdf2picOptions);
+    const pageImage = await converter(slideNumber);
+    const imagePath = pageImage.path;
+    // OCR
+    const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
+    // 이미지를 sharp로 리사이즈(최대 1024px) 후 파일로 저장
+    const customImageName = `m_${materialId}_s_${slideNumber}.png`;
+    const customImagePath = path.join(path.dirname(imagePath), customImageName);
+    const resizedBuffer = await sharp(fs.readFileSync(imagePath))
+      .resize({ width: 1024, height: 1024, fit: 'inside' })
+      .png()
+      .toBuffer();
+    fs.writeFileSync(customImagePath, resizedBuffer);
+    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:3000`;
+    const imageUrl = `${publicBaseUrl}/uploads/${customImageName}`;
+    // GPT 구조화 요약 (image_url만 전달)
+    const gptResult = await summarizeSlideWithGPT(text, imageUrl);
+    // main_keywords 처리 (문자열 → 배열)
+    let mainKeywordsArr = [];
+    if (gptResult.main_keywords) {
+        mainKeywordsArr = gptResult.main_keywords.split(',').map(k => k.trim()).filter(Boolean);
+    }
+    // DB 저장 (구조화 컬럼 포함)
+    await pool.query(
+        'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary, image_url, image_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary, `/uploads/${customImageName}`, gptResult.image_description]
+    );
+}
+
 // PDF 업로드 및 페이지 수 계산 API
 app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res) => {
     if (!req.file) {
@@ -106,7 +153,14 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
         const newPath = path.join('uploads', newFilename);
         fs.renameSync(pdfPath, newPath);
 
-        // (DB에는 이미 원본 파일명 저장했으니, material_name 업데이트 필요 없음)
+        // 슬라이드별 summary/이미지 자동 생성
+        for (let i = 1; i <= numPages; i++) {
+            try {
+                await generateSlideSummary(materialId, i, req.user.user_id);
+            } catch (err) {
+                console.error(`슬라이드 ${i} 요약 생성 실패:`, err);
+            }
+        }
 
         res.json({
             material_id: materialId,
@@ -123,7 +177,7 @@ app.get('/archive/list', authenticateToken, async (req, res) => {
     const userId = req.user.user_id;
     try {
         const results = await pool.query(
-            'SELECT material_id, material_name, page, progress FROM lecture_materials WHERE user_id = ? ORDER BY material_id DESC',
+            'SELECT material_id, material_name, page, progress, created_at FROM lecture_materials WHERE user_id = ? ORDER BY material_id DESC',
             [userId]
         );
         // BigInt to string 처리
@@ -131,7 +185,8 @@ app.get('/archive/list', authenticateToken, async (req, res) => {
             material_id: mat.material_id.toString(),
             title: mat.material_name,
             page: Number(mat.page),
-            progress: Number(mat.progress)
+            progress: Number(mat.progress),
+            created_at: mat.created_at ? new Date(mat.created_at).toISOString().slice(0, 10) : null
         }));
         res.json({ materials });
     } catch (err) {
@@ -144,23 +199,33 @@ app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
     try {
         const materialId = req.params.lecture_id;
         console.log('archive 요청 materialId:', materialId);
+        // 강의자료 정보 쿼리 (created_at 포함)
+        const [material] = await pool.query(
+            'SELECT material_id, material_name, created_at FROM lecture_materials WHERE material_id = ?',
+            [materialId]
+        );
+        if (!material) return res.status(404).json({ error: '자료 없음' });
         const slides = await pool.query(
             'SELECT slide_id, slide_number, original_text, summary, image_url, image_description, slide_title, concept_explanation, main_keywords, important_sentences FROM slides WHERE material_id = ? ORDER BY slide_number',
             [materialId]
         );
-        console.log('slides 결과:', slides);
-        res.json({ slides: (slides || []).map(s => ({
-            slide_id: s.slide_id,
-            slide_number: s.slide_number,
-            original_text: s.original_text,
-            summary: s.summary,
-            image_url: s.image_url,
-            image_description: s.image_description,
-            slide_title: s.slide_title,
-            concept_explanation: s.concept_explanation,
-            main_keywords: s.main_keywords,
-            important_sentences: s.important_sentences
-        })) });
+        res.json({
+            material_id: material.material_id,
+            title: material.material_name,
+            created_at: material.created_at ? new Date(material.created_at).toISOString().slice(0, 10) : null,
+            slides: (slides || []).map(s => ({
+                slide_id: s.slide_id,
+                slide_number: s.slide_number,
+                original_text: s.original_text,
+                summary: s.summary,
+                image_url: s.image_url,
+                image_description: s.image_description,
+                slide_title: s.slide_title,
+                concept_explanation: s.concept_explanation,
+                main_keywords: s.main_keywords,
+                important_sentences: s.important_sentences
+            }))
+        });
     } catch (err) {
         console.error('슬라이드 요약 조회 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
@@ -379,7 +444,7 @@ app.post('/archive/:lecture_id/summary', authenticateToken, async (req, res) => 
 
 // 루트 경로에 대한 응답 추가
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, '../frontend/public/index.html'));
 });
 
 // 진도율 저장 API
@@ -580,6 +645,52 @@ app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
         res.json(keywords);
     } catch (err) {
         res.status(500).json({ error: '키워드 리스트 조회 오류' });
+    }
+});
+
+// 특정 강의자료의 문제 목록 조회
+app.get('/archive/questions/:material_id', authenticateToken, async (req, res) => {
+    const materialId = req.params.material_id;
+    try {
+        const questions = await pool.query(`
+            SELECT q.question_id, q.question_type, q.content, q.answer, q.explanation, q.difficulty
+            FROM questions q
+            JOIN slides s ON q.slide_id = s.slide_id
+            WHERE s.material_id = ?
+            ORDER BY s.slide_number, q.question_id
+        `, [materialId]);
+        
+        res.json({ questions });
+    } catch (err) {
+        console.error('문제 목록 조회 오류:', err);
+        res.status(500).json({ error: '문제 목록 조회 오류' });
+    }
+});
+
+// 특정 강의자료의 오답 목록 조회
+app.get('/archive/wrong-answers/:material_id', authenticateToken, async (req, res) => {
+    const materialId = req.params.material_id;
+    const userId = req.user.user_id;
+    try {
+        const wrongAnswers = await pool.query(`
+            SELECT 
+                qa.attempt_id,
+                qa.attempt_date,
+                q.content as question_content,
+                qa.answer,
+                q.answer as correct_answer,
+                q.explanation
+            FROM question_attempts qa
+            JOIN questions q ON qa.question_id = q.question_id
+            JOIN slides s ON q.slide_id = s.slide_id
+            WHERE s.material_id = ? AND qa.user_id = ? AND qa.is_correct = 0
+            ORDER BY qa.attempt_date DESC
+        `, [materialId, userId]);
+        
+        res.json({ wrongAnswers });
+    } catch (err) {
+        console.error('오답 목록 조회 오류:', err);
+        res.status(500).json({ error: '오답 목록 조회 오류' });
     }
 });
 
