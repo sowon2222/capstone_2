@@ -56,3 +56,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print("라우터 목록:", app.routes)

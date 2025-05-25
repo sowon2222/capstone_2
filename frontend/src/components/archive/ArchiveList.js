@@ -66,20 +66,22 @@ const ArchiveList = ({ sortBy, sortOrder, onSelectArchive, searchQuery }) => {
           className="bg-[#232329] rounded-2xl border border-[#3a3a42] hover:border-[#346aff] hover:shadow-lg transition-all cursor-pointer"
           onClick={() => onSelectArchive(archive)}
         >
-          <div className="p-6">
+          <div className="p-6 flex items-center justify-between">
             <div className="flex items-start gap-4">
               <div className="text-3xl">📚</div>
               <div className="flex items-center gap-3 mb-1">
                 <h3 className="text-lg font-medium text-white truncate">
                   {archive.title}
                 </h3>
-                {archive.created_at && (
-                  <span className="ml-2 text-xs text-[#bbbbbb]">({archive.created_at})</span>
-                )}
                 <div className="flex gap-2">
                   <span className="px-2 py-1 text-xs rounded-full bg-blue-900/80 text-blue-300">
                     문서분석
                   </span>
+                  {archive.has_quiz && (
+                    <span className="px-2 py-1 text-xs rounded-full bg-orange-900/80 text-orange-300">
+                      문제풀이
+                    </span>
+                  )}
                   {archive.tag && archive.tag !== '문서분석' && (
                     <span className={`px-2 py-1 text-xs rounded-full ${getTypeColor(archive.type)}`}>
                       {archive.tag}
@@ -87,17 +89,11 @@ const ArchiveList = ({ sortBy, sortOrder, onSelectArchive, searchQuery }) => {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-4 text-sm text-[#bbbbbb]">
-                <span>{archive.date ? new Date(archive.date).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : ''}</span>
-                {archive.completed && (
-                  <span className="inline-flex items-center gap-1">
-                    <svg className="w-4 h-4 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    학습 완료
-                  </span>
-                )}
-              </div>
+            </div>
+            <div className="flex items-center gap-4 text-sm text-[#bbbbbb]">
+              {archive.created_at && (
+                <span>{new Date(archive.created_at.replace(' ', 'T')).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+              )}
             </div>
           </div>
         </div>

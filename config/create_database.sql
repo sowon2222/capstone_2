@@ -1,4 +1,4 @@
--- Create database
+DROP DATABASE IF EXISTS study_platform;
 CREATE DATABASE IF NOT EXISTS study_platform;
 USE study_platform;
 
@@ -164,7 +164,7 @@ WHERE `weak_keyword_logs`.`is_incorrect` = 1
 GROUP BY `weak_keyword_logs`.`user_id`,`weak_keyword_logs`.`keyword_id`;
 
 -- 집중 세션 테이블 추가
-CREATE TABLE focus_session (
+CREATE TABLE focus_sessions (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
     start_time TIMESTAMP NOT NULL,
@@ -173,3 +173,14 @@ CREATE TABLE focus_session (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_focus_session_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 ); 
+
+ALTER TABLE lecture_materials DROP INDEX material_name;
+
+RENAME TABLE focus_session TO focus_sessions;
+
+ALTER TABLE focus_sessions
+ADD COLUMN is_interrupted BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE slides
+ADD COLUMN image_url VARCHAR(255) DEFAULT NULL,
+ADD COLUMN image_description TEXT DEFAULT NULL;

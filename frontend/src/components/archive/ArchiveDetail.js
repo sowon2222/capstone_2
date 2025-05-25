@@ -22,13 +22,6 @@ const ArchiveDetail = ({ archive, onBack }) => {
       .then(res => res.json())
       .then(data => setSlides(data.slides || []));
 
-    // 문제 데이터 가져오기
-    fetch(`http://localhost:3000/archive/questions/${archive.material_id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => setQuestions(data.questions || []));
-
     // 오답 데이터 가져오기
     fetch(`http://localhost:3000/archive/wrong-answers/${archive.material_id}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -43,7 +36,10 @@ const ArchiveDetail = ({ archive, onBack }) => {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(res => res.json())
-        .then(data => setAttempts(data || []));
+        .then(data => {
+          console.log('attempts:', data);
+          setAttempts(data || []);
+        });
     }
   }, [archive.material_id, token]);
 
@@ -262,7 +258,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
 
         {activeTab === 'questions' && (
           <div className="space-y-6">
-            {attempts.length > 0 ? attempts.map((attempt) => {
+            {attempts.length > 0 ? attempts.map((attempt, idx) => {
               const parsed = parseQuestionContent(attempt.question_content || attempt.content || attempt.question);
               const options = parsed.options;
               const displayAnswer = getDisplayAnswer(attempt.correct_answer || parsed.correct_answer, options);
@@ -270,7 +266,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
               const isCorrect = attempt.is_correct;
               const slideNum = attempt.slide_number || attempt.slide;
               return (
-                <div key={`${archive.material_id}-attempt-${attempt.attempt_id}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
+                <div key={`${archive.material_id}-attempt-${attempt.attempt_id || idx}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
                   <div className="flex items-center gap-3 mb-4">
                     {slideNum && (
                       <span className="px-2 py-1 text-xs rounded-full bg-[#23232a] border border-[#346aff] text-[#346aff]">슬라이드 {slideNum}에서 출제</span>
@@ -297,7 +293,7 @@ const ArchiveDetail = ({ archive, onBack }) => {
                           <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
                           <ul className="ml-4">
                             {Object.entries(options).map(([key, value]) => (
-                              <li key={`${archive.material_id}-${attempt.attempt_id}-${key}`} className="text-white">{key}. {value}</li>
+                              <li key={`${archive.material_id}-${attempt.attempt_id || idx}-${key}`} className="text-white">{key}. {value}</li>
                             ))}
                           </ul>
                         </div>

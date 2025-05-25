@@ -10,6 +10,7 @@ const Tesseract = require('tesseract.js');
 const fs = require('fs');
 const { summarizeWithGPT, summarizeSlideWithGPT, summarizeMaterialWithGPT } = require('./summarizeWithGPT');
 const { fromPath } = require('pdf2pic');
+const sharp = require('sharp');
 require('dotenv').config();
 
 const app = express();
@@ -27,13 +28,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MariaDB 연결 풀 설정
 const pool = mariadb.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
+    host: 'localhost',
+    user: 'root',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT,
-    connectionLimit: 5,
-    allowPublicKeyRetrieval: true
+    connectionLimit: 5
 });
 
 
@@ -59,102 +58,6 @@ const upload = multer({
     }
 });
 
-/* 
-// 회원가입 API
-app.post('/api/register', async (req, res) => {
-    let conn;
-    try {
-        const { username, password } = req.body;
-        
-        // 입력값 검증
-        if (!username || !password) {
-            return res.status(400).json({ error: '사용자 이름과 비밀번호를 모두 입력해주세요.' });
-        }
-
-        conn = await pool.getConnection();
-        
-        // 비밀번호 해싱
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // 사용자 생성
-        const result = await conn.query(
-            'INSERT INTO users (username, password) VALUES (?, ?)',
-            [username, hashedPassword]
-        );
-        
-        res.status(201).json({ 
-            message: '회원가입이 완료되었습니다.',
-            userId: result.insertId.toString()
-        });
-        
-    } catch (err) {
-        console.error('회원가입 중 오류:', err);
-        if (err.code === 'ER_DUP_ENTRY') {
-            res.status(400).json({ error: '이미 사용 중인 사용자 이름입니다.' });
-        } else {
-            res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-        }
-    } finally {
-        if (conn) conn.release();
-    }
-});
-
-// 로그인 API
-app.post('/api/login', async (req, res) => {
-    let conn;
-    try {
-        const { username, password } = req.body;
-        
-        // 입력값 검증
-        if (!username || !password) {
-            return res.status(400).json({ error: '사용자 이름과 비밀번호를 모두 입력해주세요.' });
-        }
-
-        conn = await pool.getConnection();
-        
-        // 사용자 조회
-        const users = await conn.query(
-            'SELECT * FROM users WHERE username = ?',
-            [username]
-        );
-        
-        if (users.length === 0) {
-            return res.status(401).json({ error: '사용자 이름 또는 비밀번호가 올바르지 않습니다.' });
-        }
-        
-        const user = users[0];
-        
-        // 비밀번호 확인
-        const isValid = await bcrypt.compare(password, user.password);
-        if (!isValid) {
-            return res.status(401).json({ error: '사용자 이름 또는 비밀번호가 올바르지 않습니다.' });
-        }
-        
-        // JWT 토큰 생성 (FastAPI와 동일하게)
-        const token = jwt.sign(
-            { user_id: user.user_id, username: user.username },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h', algorithm: 'HS256' }
-        );
-        
-        res.json({
-            message: '로그인 성공',
-            token,
-            user: {
-                id: user.user_id,
-                username: user.username
-            }
-        });
-        
-    } catch (err) {
-        console.error('로그인 중 오류:', err);
-        res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-    } finally {
-        if (conn) conn.release();
-    }
-});
-
-*/ 
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -173,53 +76,6 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
-
-// 슬라이드 요약 생성 함수 분리
-async function generateSlideSummary(materialId, slideNumber, userId) {
-    // PDF 파일 경로 찾기
-    const [material] = await pool.query(
-        'SELECT material_name FROM lecture_materials WHERE material_id = ? AND user_id = ?',
-        [materialId, userId]
-    );
-    if (!material) throw new Error('자료 없음');
-    const pdfPath = path.join(__dirname, 'uploads', `${materialId}.pdf`);
-    // PDF → 이미지 변환
-    const pdf2picOptions = { 
-        density: 150, 
-        saveFilename: "slide", 
-        savePath: "./uploads", 
-        format: "png", 
-        width: 1200, 
-        height: 900 
-    };
-    const converter = fromPath(pdfPath, pdf2picOptions);
-    const pageImage = await converter(slideNumber);
-    const imagePath = pageImage.path;
-    // OCR
-    const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
-    // 이미지를 sharp로 리사이즈(최대 1024px) 후 파일로 저장
-    const customImageName = `m_${materialId}_s_${slideNumber}.png`;
-    const customImagePath = path.join(path.dirname(imagePath), customImageName);
-    const resizedBuffer = await sharp(fs.readFileSync(imagePath))
-      .resize({ width: 1024, height: 1024, fit: 'inside' })
-      .png()
-      .toBuffer();
-    fs.writeFileSync(customImagePath, resizedBuffer);
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:3000`;
-    const imageUrl = `${publicBaseUrl}/uploads/${customImageName}`;
-    // GPT 구조화 요약 (image_url만 전달)
-    const gptResult = await summarizeSlideWithGPT(text, imageUrl);
-    // main_keywords 처리 (문자열 → 배열)
-    let mainKeywordsArr = [];
-    if (gptResult.main_keywords) {
-        mainKeywordsArr = gptResult.main_keywords.split(',').map(k => k.trim()).filter(Boolean);
-    }
-    // DB 저장 (구조화 컬럼 포함)
-    await pool.query(
-        'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary, image_url, image_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary, `/uploads/${customImageName}`, gptResult.image_description]
-    );
-}
 
 // PDF 업로드 및 페이지 수 계산 API
 app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res) => {
@@ -250,14 +106,7 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
         const newPath = path.join('uploads', newFilename);
         fs.renameSync(pdfPath, newPath);
 
-        // 슬라이드별 summary/이미지 자동 생성
-        for (let i = 1; i <= numPages; i++) {
-            try {
-                await generateSlideSummary(materialId, i, req.user.user_id);
-            } catch (err) {
-                console.error(`슬라이드 ${i} 요약 생성 실패:`, err);
-            }
-        }
+        // (DB에는 이미 원본 파일명 저장했으니, material_name 업데이트 필요 없음)
 
         res.json({
             material_id: materialId,
@@ -273,41 +122,137 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
 app.get('/archive/list', authenticateToken, async (req, res) => {
     const userId = req.user.user_id;
     try {
+        // 각 자료별로 문제풀이 기록이 있는지(has_quiz)도 함께 조회
         const results = await pool.query(
-            'SELECT material_id, material_name, page, progress, created_at FROM lecture_materials WHERE user_id = ? ORDER BY material_id DESC',
+            `SELECT m.material_id, m.material_name, m.page, m.progress, m.created_at,
+                (SELECT COUNT(*) FROM questions q 
+                 JOIN slides s ON q.slide_id = s.slide_id 
+                 WHERE s.material_id = m.material_id) AS quiz_count
+            FROM lecture_materials m
+            WHERE m.user_id = ?
+            ORDER BY m.material_id DESC`,
             [userId]
         );
-        // BigInt to string 처리
+        // BigInt to string 처리 및 has_quiz 추가
         const materials = results.map(mat => ({
             material_id: mat.material_id.toString(),
             title: mat.material_name,
             page: Number(mat.page),
             progress: Number(mat.progress),
-            created_at: mat.created_at ? new Date(mat.created_at).toISOString().slice(0, 10) : null
+            created_at: mat.created_at,
+            has_quiz: Number(mat.quiz_count) > 0
         }));
         res.json({ materials });
     } catch (err) {
+        console.error('자료 리스트 조회 오류:', err);
         res.status(500).json({ error: '자료 리스트 조회 오류' });
     }
 });
 
-// 보관함 상세(자료명, 업로드일, 슬라이드 상세 등)
+// 특정 강의자료의 슬라이드 요약 전체
 app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
     try {
         const materialId = req.params.lecture_id;
+        console.log('archive 요청 materialId:', materialId);
         const slides = await pool.query(
-            'SELECT slide_number, original_text, summary FROM slides WHERE material_id = ? ORDER BY slide_number',
+            'SELECT slide_id, slide_number, original_text, summary, image_url, image_description, slide_title, concept_explanation, main_keywords, important_sentences FROM slides WHERE material_id = ? ORDER BY slide_number',
             [materialId]
         );
+        console.log('slides 결과:', slides);
         res.json({ slides: (slides || []).map(s => ({
+            slide_id: s.slide_id,
             slide_number: s.slide_number,
             original_text: s.original_text,
-            summary: s.summary
+            summary: s.summary,
+            image_url: s.image_url,
+            image_description: s.image_description,
+            slide_title: s.slide_title,
+            concept_explanation: s.concept_explanation,
+            main_keywords: s.main_keywords,
+            important_sentences: s.important_sentences
         })) });
     } catch (err) {
+        console.error('슬라이드 요약 조회 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
     }
 });
+
+
+// 오늘의 학습 시간 누적 API
+app.post('/api/study-time', authenticateToken, async (req, res) => {
+    const userId = req.user.user_id;
+    const { duration } = req.body; // 초 단위
+    const today = new Date().toISOString().slice(0, 10);
+
+    try {
+        // 오늘 기록이 있으면 누적, 없으면 새로 생성
+        const [row] = await pool.query(
+            'SELECT * FROM daily_study_time WHERE user_id = ? AND study_date = ?',
+            [userId, today]
+        );
+        if (row) {
+            await pool.query(
+                'UPDATE daily_study_time SET total_time = total_time + ? WHERE user_id = ? AND study_date = ?',
+                [duration, userId, today]
+            );
+            console.log(`[UPDATE] daily_study_time: user_id=${userId}, date=${today}, +${duration}초`);
+        } else {
+            await pool.query(
+                'INSERT INTO daily_study_time (user_id, study_date, total_time) VALUES (?, ?, ?)',
+                [userId, today, duration]
+            );
+            console.log(`[INSERT] daily_study_time: user_id=${userId}, date=${today}, duration=${duration}`);
+        }
+
+        // intensity 점수 계산
+        const sql = `
+            SELECT 
+                d.study_date,
+                ROUND(
+                    (IFNULL(MAX(spl.total_progress),0) * 0.35) +     -- 오늘 진도율(%) 35%
+                    (COUNT(DISTINCT qa.question_id) * 0.25) +         -- 문제 풀이 수 25%
+                    (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) * 0.20) +  -- 정답 수 20%
+                    (IFNULL(d.total_time,0) * 0.20),                 -- 학습 시간 20%
+                    2
+                ) AS intensity_score
+            FROM daily_study_time d
+            LEFT JOIN study_progress_log spl ON d.user_id = spl.user_id AND d.study_date = spl.study_date
+            LEFT JOIN question_attempts qa ON d.user_id = qa.user_id AND d.study_date = qa.attempt_date
+            LEFT JOIN questions q ON qa.question_id = q.question_id
+            LEFT JOIN lecture_materials lm ON d.user_id = lm.user_id AND DATE(lm.created_at) = d.study_date
+            WHERE d.user_id = ? AND d.study_date = CURDATE()
+            GROUP BY d.study_date
+        `;
+        const [row2] = await pool.query(sql, [userId]);
+        console.log('intensity row2:', row2);
+        const intensityScore = row2 && row2.intensity_score ? row2.intensity_score : 0;
+
+        // intensity_log에 무조건 INSERT/UPDATE
+        const [existing] = await pool.query(
+            'SELECT * FROM study_intensity_log WHERE user_id = ? AND study_date = ?',
+            [userId, today]
+        );
+        if (existing) {
+            await pool.query(
+                'UPDATE study_intensity_log SET intensity_score = ? WHERE log_id = ?',
+                [intensityScore, existing.log_id]
+            );
+            console.log(`[UPDATE] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
+        } else {
+            await pool.query(
+                'INSERT INTO study_intensity_log (user_id, study_date, intensity_score) VALUES (?, ?, ?)',
+                [userId, today, intensityScore]
+            );
+            console.log(`[INSERT] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('학습 시간 저장 오류:', err);
+        res.status(500).json({ error: '학습 시간 저장 오류' });
+    }
+});
+
 
 // 특정 슬라이드 요약 API
 app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, async (req, res) => {
@@ -351,9 +296,22 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         // OCR
         const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
 
-        // GPT 구조화 요약
-        const gptResult = await summarizeSlideWithGPT(text);
-        // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary }
+        // 이미지를 sharp로 리사이즈(최대 1024px) 후 파일로 저장
+        // 이미지 저장 파일명: m_<materialId>_s_<slideNumber>.png
+        const customImageName = `m_${materialId}_s_${slideNumber}.png`;
+        const customImagePath = path.join(path.dirname(imagePath), customImageName);
+        const resizedBuffer = await sharp(fs.readFileSync(imagePath))
+          .resize({ width: 1024, height: 1024, fit: 'inside' })
+          .png()
+          .toBuffer();
+        fs.writeFileSync(customImagePath, resizedBuffer);
+        // 퍼블릭 URL 환경변수 사용 (ngrok 등)
+        const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+        const imageUrl = `${publicBaseUrl}/uploads/${customImageName}`;
+
+        // GPT 구조화 요약 (image_url만 전달)
+        const gptResult = await summarizeSlideWithGPT(text, imageUrl);
+        // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary, image_description }
 
         // main_keywords 처리 (문자열 → 배열)
         let mainKeywordsArr = [];
@@ -385,11 +343,14 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         }
 
         // DB 저장 (구조화 컬럼 포함)
+        console.log('[슬라이드 요약 생성] materialId:', materialId, 'slideNumber:', slideNumber);
+        console.log('[슬라이드 요약 생성] gptResult:', gptResult);
         const slideResult = await pool.query(
-            'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary]
+            'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary, image_url, image_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary, `/uploads/${customImageName}`, gptResult.image_description]
         );
         const slideId = slideResult.insertId;
+        console.log('[슬라이드 요약 생성] slideId:', slideId);
 
         // slide_keywords 연결 (슬라이드당 첫 번째 키워드만)
         if (firstKeywordId) {
@@ -404,7 +365,7 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
 
         // 진도율 계산
         const [totalSlides] = await pool.query(
-            'SELECT COUNT(*) as total FROM slides WHERE material_id = ?',
+            'SELECT COUNT(DISTINCT slide_number) as total FROM slides WHERE material_id = ?',
             [materialId]
         );
         const [materialInfo] = await pool.query(
@@ -467,7 +428,8 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
                 main_keywords: gptResult.main_keywords,
                 important_sentences: gptResult.important_sentences,
                 summary: gptResult.summary,
-                image_url: `/uploads/${path.basename(imagePath)}`
+                image_url: `/uploads/${customImageName}`,
+                image_description: gptResult.image_description
             },
             slide_id: slideId,
             main_keywords: mainKeywordsArr
@@ -507,19 +469,32 @@ app.post('/archive/:lecture_id/summary', authenticateToken, async (req, res) => 
 
 // 루트 경로에 대한 응답 추가
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/public/index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // 진도율 저장 API
 app.post('/archive/:lecture_id/progress', authenticateToken, async (req, res) => {
     const materialId = req.params.lecture_id;
-    const { progress } = req.body;
+    // const { progress } = req.body; // 프론트에서 progress를 받아오지 않음
     try {
+        // slides 테이블에서 material_id에 해당하는 슬라이드 개수
+        const [slideCountRow] = await pool.query(
+            'SELECT COUNT(*) as cnt FROM slides WHERE material_id = ?',
+            [materialId]
+        );
+        const slideCount = Number(slideCountRow.cnt);
+        // 전체 슬라이드(page) 개수
+        const [materialRow] = await pool.query(
+            'SELECT page FROM lecture_materials WHERE material_id = ?',
+            [materialId]
+        );
+        const totalPages = Number(materialRow.page);
+        const progress = totalPages > 0 ? (slideCount / totalPages) * 100 : 0;
         await pool.query(
             'UPDATE lecture_materials SET progress = ? WHERE material_id = ? AND user_id = ?',
             [progress, materialId, req.user.user_id]
         );
-        res.json({ success: true });
+        res.json({ success: true, progress });
     } catch (err) {
         res.status(500).json({ error: '진도율 저장 오류' });
     }
@@ -696,20 +671,6 @@ app.get('/slides/:slide_id/keywords', authenticateToken, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: '키워드 리스트 조회 오류' });
     }
-});
-
-// 누적 학습 시간(초) 반환
-app.get('/api/study-time/total', authenticateToken, async (req, res) => {
-  const userId = req.user.user_id;
-  try {
-    const [row] = await pool.query(
-      'SELECT SUM(total_time) as total_time FROM daily_study_time WHERE user_id = ?',
-      [userId]
-    );
-    res.json({ total_time: row && row.total_time ? row.total_time : 0 });
-  } catch (err) {
-    res.status(500).json({ error: '총 학습 시간 조회 오류' });
-  }
 });
 
 // 서버 시작

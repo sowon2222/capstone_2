@@ -1,10 +1,12 @@
 import os
 from dotenv import load_dotenv
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, FastAPI
 import pymysql
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+app = FastAPI()
 router = APIRouter()
 
 # DB 연결 함수
@@ -14,7 +16,7 @@ def get_db():
         host=os.getenv('DB_HOST', 'localhost'),
         port=int(os.getenv('DB_PORT', 3306)),
         user=os.getenv('DB_USER', 'root'),
-        password=os.getenv('DB_PASSWORD', ''),
+        password=os.getenv('DB_PASSWORD', '1234'),
         db=os.getenv('DB_NAME', 'study_platform'),
         charset='utf8mb4',
         cursorclass=pymysql.cursors.DictCursor
@@ -234,4 +236,14 @@ def focus_timeline(
             rows = cursor.fetchall()
         return rows
     finally:
-        conn.close() 
+        conn.close()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 모든 origin 허용
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router) 
