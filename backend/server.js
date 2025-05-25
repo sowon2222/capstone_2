@@ -295,34 +295,15 @@ app.get('/archive/list', authenticateToken, async (req, res) => {
 app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
     try {
         const materialId = req.params.lecture_id;
-        console.log('archive 요청 materialId:', materialId);
-        // 강의자료 정보 쿼리 (created_at 포함)
-        const [material] = await pool.query(
-            'SELECT material_id, material_name, created_at FROM lecture_materials WHERE material_id = ?',
-            [materialId]
-        );
-        if (!material) return res.status(404).json({ error: '자료 없음' });
         const slides = await pool.query(
-            'SELECT slide_id, slide_number, original_text, summary, image_url, image_description, slide_title, concept_explanation, main_keywords, important_sentences FROM slides WHERE material_id = ? ORDER BY slide_number',
+            'SELECT slide_number, original_text, summary FROM slides WHERE material_id = ? ORDER BY slide_number',
             [materialId]
         );
-        res.json({
-            material_id: material.material_id,
-            title: material.material_name,
-            created_at: material.created_at ? new Date(material.created_at).toISOString().slice(0, 10) : null,
-            slides: (slides || []).map(s => ({
-                slide_id: s.slide_id,
-                slide_number: s.slide_number,
-                original_text: s.original_text,
-                summary: s.summary,
-                image_url: s.image_url,
-                image_description: s.image_description,
-                slide_title: s.slide_title,
-                concept_explanation: s.concept_explanation,
-                main_keywords: s.main_keywords,
-                important_sentences: s.important_sentences
-            }))
-        });
+        res.json({ slides: (slides || []).map(s => ({
+            slide_number: s.slide_number,
+            original_text: s.original_text,
+            summary: s.summary
+        })) });
     } catch (err) {
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
     }
@@ -729,52 +710,6 @@ app.get('/api/study-time/total', authenticateToken, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: '총 학습 시간 조회 오류' });
   }
-});
-
-// 특정 강의자료의 문제 목록 조회
-app.get('/archive/questions/:material_id', authenticateToken, async (req, res) => {
-    const materialId = req.params.material_id;
-    try {
-        const questions = await pool.query(`
-            SELECT q.question_id, q.question_type, q.content, q.answer, q.explanation, q.difficulty
-            FROM questions q
-            JOIN slides s ON q.slide_id = s.slide_id
-            WHERE s.material_id = ?
-            ORDER BY s.slide_number, q.question_id
-        `, [materialId]);
-        
-        res.json({ questions });
-    } catch (err) {
-        console.error('문제 목록 조회 오류:', err);
-        res.status(500).json({ error: '문제 목록 조회 오류' });
-    }
-});
-
-// 특정 강의자료의 오답 목록 조회
-app.get('/archive/wrong-answers/:material_id', authenticateToken, async (req, res) => {
-    const materialId = req.params.material_id;
-    const userId = req.user.user_id;
-    try {
-        const wrongAnswers = await pool.query(`
-            SELECT 
-                qa.attempt_id,
-                qa.attempt_date,
-                q.content as question_content,
-                qa.answer,
-                q.answer as correct_answer,
-                q.explanation
-            FROM question_attempts qa
-            JOIN questions q ON qa.question_id = q.question_id
-            JOIN slides s ON q.slide_id = s.slide_id
-            WHERE s.material_id = ? AND qa.user_id = ? AND qa.is_correct = 0
-            ORDER BY qa.attempt_date DESC
-        `, [materialId, userId]);
-        
-        res.json({ wrongAnswers });
-    } catch (err) {
-        console.error('오답 목록 조회 오류:', err);
-        res.status(500).json({ error: '오답 목록 조회 오류' });
-    }
 });
 
 // 서버 시작
