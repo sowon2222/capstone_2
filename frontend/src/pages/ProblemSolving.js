@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import HeaderBar from '../components/layout/HeaderBar';
 import ProblemList from '../components/problem-solving/ProblemList';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -24,6 +24,10 @@ export default function ProblemSolving() {
   const [studyStats, setStudyStats] = useState(null);
   const [wrongNotes, setWrongNotes] = useState([]);
   const [slides, setSlides] = useState(location.state?.slides || []);
+  const [sessionId, setSessionId] = useState(null);
+  const [prevTotalDuration, setPrevTotalDuration] = useState(0); // DB에서 불러온 누적값(초)
+  const [sessionTimer, setSessionTimer] = useState(0); // 현재 세션에서 측정된 시간(초)
+  const sessionTimerInterval = useRef(null);
 
   const token = localStorage.getItem('token');
 
@@ -64,6 +68,54 @@ export default function ProblemSolving() {
       setCurrentSlideIdx(0);
     }
   }, [problems]);
+
+  useEffect(() => {
+    if (selectedDocument?.material_id) {
+      const startSession = async () => {
+        const token = localStorage.getItem('token');
+        // [1] 세션 시작(또는 재사용) API 호출
+        const res = await fetch('http://localhost:3000/api/study-session/start', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ materialId: selectedDocument.material_id })
+        });
+        const data = await res.json();
+        setSessionId(data.sessionId);
+
+        // [2] 기존 누적 학습시간 불러오기
+        const res2 = await fetch(`http://localhost:3000/api/study-session/${data.sessionId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data2 = await res2.json();
+        setPrevTotalDuration(data2.total_duration || 0);
+
+        // [3] 타이머 초기화 및 시작
+        if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+        setSessionTimer(0);
+        sessionTimerInterval.current = setInterval(() => {
+          setSessionTimer(prev => prev + 1);
+        }, 1000);
+      };
+      startSession();
+    }
+    // 언마운트 시 타이머 정리
+    return () => {
+      if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+    };
+  }, [selectedDocument]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveStudyTime();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [sessionTimer, sessionId]);
 
   const generateProblemForSlide = async (slide) => {
     setProblemsLoading(true);
@@ -403,7 +455,8 @@ export default function ProblemSolving() {
   };
 
   // 문제풀이 결과 화면에서 목록으로 돌아가기
-  const handleBackToList = () => {
+  const handleBackToList = async () => {
+    await saveStudyTime();
     setCurrentView('list');
     setSelectedDocument(null);
     setCurrentSlideIdx(0);
@@ -412,6 +465,28 @@ export default function ProblemSolving() {
     setProblems([]);
     setProblemsLoading(false);
   };
+
+  const saveStudyTime = async () => {
+    if (!sessionId) return;
+    const token = localStorage.getItem('token');
+    if (sessionTimer > 0 && token) {
+      await fetch('http://localhost:3000/api/study-time', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ duration: sessionTimer, sessionId })
+      });
+      setPrevTotalDuration(prev => prev + sessionTimer);
+      setSessionTimer(0);
+    }
+  };
+
+  // 학습 시간 계산
+  const totalSeconds = prevTotalDuration + sessionTimer;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
 
   // 본 문제풀이 ... 결과 화면(showResult) ...점수, 정답/오답 해설, 오답 노트 보기, 보충학습 하기 포함함
   if (!token) {
@@ -559,7 +634,7 @@ export default function ProblemSolving() {
             <FaFire className="mr-1" /> {currentSlideIdx + 1}/{problems.length} 문제
           </span>
           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-900/80 text-blue-300 text-sm font-semibold">
-            <FaClock className="mr-1" /> 12분 학습
+            <FaClock className="mr-1" /> {minutes}분 {seconds}초 학습
           </span>
           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-900/80 text-green-300 text-sm font-semibold">
             <FaChartLine className="mr-1" /> 진도율 {progress}%

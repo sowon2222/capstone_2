@@ -180,75 +180,37 @@ app.get('/archive/:lecture_id', authenticateToken, async (req, res) => {
 
 // 오늘의 학습 시간 누적 API
 app.post('/api/study-time', authenticateToken, async (req, res) => {
+    const { duration, sessionId } = req.body;
     const userId = req.user.user_id;
-    const { duration } = req.body; // 초 단위
     const today = new Date().toISOString().slice(0, 10);
 
     try {
-        // 오늘 기록이 있으면 누적, 없으면 새로 생성
+        // 세션 누적시간 증가
+        await pool.query(
+            'UPDATE study_sessions SET total_duration = total_duration + ? WHERE session_id = ? AND user_id = ?',
+            [duration, sessionId, userId]
+        );
+
+        // 일일 누적 학습시간도 증가
         const [row] = await pool.query(
             'SELECT * FROM daily_study_time WHERE user_id = ? AND study_date = ?',
             [userId, today]
         );
+        
         if (row) {
             await pool.query(
                 'UPDATE daily_study_time SET total_time = total_time + ? WHERE user_id = ? AND study_date = ?',
                 [duration, userId, today]
             );
-            console.log(`[UPDATE] daily_study_time: user_id=${userId}, date=${today}, +${duration}초`);
         } else {
             await pool.query(
                 'INSERT INTO daily_study_time (user_id, study_date, total_time) VALUES (?, ?, ?)',
                 [userId, today, duration]
             );
-            console.log(`[INSERT] daily_study_time: user_id=${userId}, date=${today}, duration=${duration}`);
-        }
-
-        // intensity 점수 계산
-        const sql = `
-            SELECT 
-                d.study_date,
-                ROUND(
-                    (IFNULL(MAX(spl.total_progress),0) * 0.35) +     -- 오늘 진도율(%) 35%
-                    (COUNT(DISTINCT qa.question_id) * 0.25) +         -- 문제 풀이 수 25%
-                    (SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END) * 0.20) +  -- 정답 수 20%
-                    (IFNULL(d.total_time,0) * 0.20),                 -- 학습 시간 20%
-                    2
-                ) AS intensity_score
-            FROM daily_study_time d
-            LEFT JOIN study_progress_log spl ON d.user_id = spl.user_id AND d.study_date = spl.study_date
-            LEFT JOIN question_attempts qa ON d.user_id = qa.user_id AND d.study_date = qa.attempt_date
-            LEFT JOIN questions q ON qa.question_id = q.question_id
-            LEFT JOIN lecture_materials lm ON d.user_id = lm.user_id AND DATE(lm.created_at) = d.study_date
-            WHERE d.user_id = ? AND d.study_date = CURDATE()
-            GROUP BY d.study_date
-        `;
-        const [row2] = await pool.query(sql, [userId]);
-        console.log('intensity row2:', row2);
-        const intensityScore = row2 && row2.intensity_score ? row2.intensity_score : 0;
-
-        // intensity_log에 무조건 INSERT/UPDATE
-        const [existing] = await pool.query(
-            'SELECT * FROM study_intensity_log WHERE user_id = ? AND study_date = ?',
-            [userId, today]
-        );
-        if (existing) {
-            await pool.query(
-                'UPDATE study_intensity_log SET intensity_score = ? WHERE log_id = ?',
-                [intensityScore, existing.log_id]
-            );
-            console.log(`[UPDATE] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
-        } else {
-            await pool.query(
-                'INSERT INTO study_intensity_log (user_id, study_date, intensity_score) VALUES (?, ?, ?)',
-                [userId, today, intensityScore]
-            );
-            console.log(`[INSERT] study_intensity_log: user_id=${userId}, date=${today}, score=${intensityScore}`);
         }
 
         res.json({ success: true });
     } catch (err) {
-        console.error('학습 시간 저장 오류:', err);
         res.status(500).json({ error: '학습 시간 저장 오류' });
     }
 });
@@ -680,6 +642,46 @@ app.get('/api/feedback', authenticateToken, async (req, res) => {
     }
 });
 
+// 학습 세션 시작 API
+app.post('/api/study-session/start', authenticateToken, async (req, res) => {
+    const { materialId } = req.body;
+    const userId = req.user.user_id;
+    try {
+        // 이미 활성화된 세션이 있으면 재사용
+        const sessions = await pool.query(
+            'SELECT * FROM study_sessions WHERE user_id = ? AND material_id = ? AND status = "active"',
+            [userId, materialId]
+        );
+        if (sessions.length > 0) {
+            return res.json({ sessionId: sessions[0].session_id });
+        }
+        // 없으면 새 세션 생성
+        const result = await pool.query(
+            'INSERT INTO study_sessions (user_id, material_id) VALUES (?, ?)',
+            [userId, materialId]
+        );
+        res.json({ sessionId: result.insertId });
+    } catch (err) {
+        console.error('세션 시작 오류:', err);
+        res.status(500).json({ error: '세션 시작 오류' });
+    }
+});
+
+// 세션 누적시간 조회 API
+app.get('/api/study-session/:sessionId', authenticateToken, async (req, res) => {
+    const sessionId = req.params.sessionId;
+    const userId = req.user.user_id;
+    try {
+        const [session] = await pool.query(
+            'SELECT total_duration FROM study_sessions WHERE session_id = ? AND user_id = ?',
+            [sessionId, userId]
+        );
+        res.json({ total_duration: session ? session.total_duration : 0 });
+    } catch (err) {
+        res.status(500).json({ error: '세션 시간 조회 오류' });
+    }
+});
+
 // 서버 시작
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
@@ -704,4 +706,9 @@ const server = app.listen(PORT, () => {
     });
 
     console.log('JWT_SECRET:', process.env.JWT_SECRET);
-}); 
+});
+
+// BigInt를 문자열로 변환하는 함수 추가
+BigInt.prototype.toJSON = function() {
+    return this.toString();
+}; 

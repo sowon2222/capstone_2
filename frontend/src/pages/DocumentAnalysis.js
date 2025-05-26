@@ -29,6 +29,10 @@ const DocumentAnalysis = () => {
   const timerInterval = useRef(null);
   const [isRequestingSummary, setIsRequestingSummary] = useState(false);
   const analysisStartTime = useRef(null);
+  const [sessionId, setSessionId] = useState(null);
+  const [prevTotalDuration, setPrevTotalDuration] = useState(0); // DB에서 불러온 누적값(초)
+  const [sessionTimer, setSessionTimer] = useState(0); // 현재 세션에서 측정된 시간(초)
+  const sessionTimerInterval = useRef(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -143,6 +147,83 @@ const DocumentAnalysis = () => {
     };
   }, [selectedPage, file]);
 
+  // =========================
+  // [학습시간 누적] 세션 시작 및 타이머 초기화
+  // =========================
+  useEffect(() => {
+    if (materialId) {
+      const startSession = async () => {
+        const token = localStorage.getItem('token');
+        // [1] 세션 시작(또는 재사용) API 호출
+        const res = await fetch('http://localhost:3000/api/study-session/start', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ materialId })
+        });
+        const data = await res.json();
+        setSessionId(data.sessionId); // 세션ID 저장
+
+        // [2] 기존 누적 학습시간 불러오기
+        const res2 = await fetch(`http://localhost:3000/api/study-session/${data.sessionId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data2 = await res2.json();
+        setPrevTotalDuration(data2.total_duration || 0); // DB 누적값 세팅
+
+        // [3] 타이머 초기화 및 시작
+        if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+        setSessionTimer(0);
+        sessionTimerInterval.current = setInterval(() => {
+          setSessionTimer(prev => prev + 1); // 1초마다 증가
+        }, 1000);
+      };
+      startSession();
+    }
+    // 언마운트 시 타이머 정리
+    return () => {
+      if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+    };
+  }, [materialId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+    sessionTimerInterval.current = setInterval(() => {
+      setSessionTimer(prev => prev + 1); // 1초마다 증가
+    }, 1000);
+    return () => {
+      if (sessionTimerInterval.current) clearInterval(sessionTimerInterval.current);
+    };
+  }, [sessionId]);
+
+  const saveStudyTime = async () => {
+    if (!sessionId) return;
+    const token = localStorage.getItem('token');
+    if (sessionTimer > 0 && token) {
+      // [4] 현재 세션에서 측정된 시간 DB에 저장
+      await fetch('http://localhost:3000/api/study-time', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ duration: sessionTimer, sessionId })
+      });
+      setPrevTotalDuration(prev => prev + sessionTimer); // 프론트 누적값도 갱신
+      setSessionTimer(0); // 타이머 리셋
+    }
+  };
+
+  // =========================
+  // [학습시간 누적] 누적 학습시간 계산 및 표시
+  // =========================
+  const totalSeconds = prevTotalDuration + sessionTimer; // DB+프론트 합산
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
   // --- 6) 페이지 선택 & 분석 ---
   const handlePageSelect = async (pageNumber) => {
     if (!materialId) {
@@ -180,7 +261,7 @@ const DocumentAnalysis = () => {
 
   // --- 7) 학습 화면 → 목록으로 돌아가기 ---
   const handleBackToList = () => {
-    saveStudyTime();
+    saveStudyTime(); // 세션 시간 저장
     setMode('list');
     setFile(null);
     setMaterialId(null);
@@ -190,6 +271,9 @@ const DocumentAnalysis = () => {
     setAnalysis(null);
     setViewedPages([1]);
     setPageTimes({});
+    setSessionId(null);
+    setSessionTimer(0);
+    setPrevTotalDuration(0);
   };
 
   // --- 8) PDF 업로드 핸들러 ---
@@ -258,17 +342,9 @@ const DocumentAnalysis = () => {
   }, [location.state]);
 
   useEffect(() => {
-    if (file && materialId) {
-      handlePageSelect(1);
-    }
-    // eslint-disable-next-line
-  }, [file, materialId]);
-
-  useEffect(() => {
     if (file && materialId && numPages > 0) {
       handlePageSelect(1);
     }
-    // eslint-disable-next-line
   }, [file, materialId, numPages]);
 
   const removeLabel = text =>
@@ -310,36 +386,16 @@ const DocumentAnalysis = () => {
     });
   };
 
-  // 학습 시간 저장 함수 (집중 세션 1개만 저장)
-  const saveStudyTime = async () => {
-    const totalTime = Object.values({ ...pageTimes, [selectedPage]: timer }).reduce((a, b) => a + (b || 0), 0);
-    const token = localStorage.getItem('token');
-    if (totalTime > 0 && token && analysisStartTime.current) {
-      try {
-        await fetch('http://localhost:3000/api/study-time', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            duration: totalTime,
-            start_time: analysisStartTime.current,
-            end_time: new Date().toISOString()
-          })
-        });
-        const payload = parseJwt(token);
-        await saveFocusSession({
-          user_id: payload.user_id,
-          start_time: analysisStartTime.current,
-          end_time: new Date().toISOString(),
-          duration: totalTime
-        });
-      } catch (error) {
-        console.error('Error saving study time:', error);
-      }
-    }
-  };
+  // 페이지 언로드 시 시간 저장
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveStudyTime();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [sessionTimer, sessionId]);
 
   if (mode === 'list') {
     return (
@@ -509,7 +565,7 @@ const DocumentAnalysis = () => {
                   <FaFire className="mr-1" /> {selectedPage}/{numPages} 페이지
                 </span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs font-semibold">
-                  <FaClock className="mr-1" /> {totalStudyTime}분 학습
+                  <FaClock className="mr-1" /> {minutes}분 {seconds}초 학습
                 </span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
                   <FaChartLine className="mr-1" /> 진도율 {progress}%
