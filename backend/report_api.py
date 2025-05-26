@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Query, FastAPI, Body
 import pymysql
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 load_dotenv()
 
@@ -26,8 +26,8 @@ def get_db():
 @router.get("/report/focus-analysis")
 def focus_analysis(
     user_id: int = Query(...),
-    period_start: str = Query("2024-06-01"),
-    period_end: str = Query("2024-06-30")
+    period_start: str = Query(date.today().strftime("%Y-%m-%d")),
+    period_end: str = Query((date.today() + timedelta(days=1)).strftime("%Y-%m-%d"))
 ):
     conn = get_db()
     try:

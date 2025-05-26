@@ -33,6 +33,7 @@ const DocumentAnalysis = () => {
   const [prevTotalDuration, setPrevTotalDuration] = useState(0); // DB에서 불러온 누적값(초)
   const [sessionTimer, setSessionTimer] = useState(0); // 현재 세션에서 측정된 시간(초)
   const sessionTimerInterval = useRef(null);
+  const interruptionStartRef = useRef(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -343,7 +344,10 @@ const DocumentAnalysis = () => {
 
   useEffect(() => {
     if (file && materialId && numPages > 0) {
-      handlePageSelect(1);
+      // 첫 페이지 요약이 이미 있으면 다시 요청하지 않도록 방어
+      if (!slideAnalyses[1]) {
+        handlePageSelect(1);
+      }
     }
   }, [file, materialId, numPages]);
 
@@ -401,6 +405,66 @@ const DocumentAnalysis = () => {
     const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
     return kst.toISOString().slice(0, 19).replace('T', ' ');
   }
+
+  // 페이지 이동(라우트 변경) 감지해서 interruption session 저장
+  useEffect(() => {
+    if (mode !== 'analysis') return;
+    const prevPathRef = { current: location.pathname };
+    const unlisten = () => {
+      // react-router v6에서는 useEffect로 location 변경 감지
+      // location이 바뀌면(즉, 페이지 이동) interruption session 저장
+      if (mode === 'analysis' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+    // location 변경 감지
+    return () => {
+      if (mode === 'analysis' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+  }, [location, mode]);
+
+  // 기존 visibilitychange 핸들러에서 interruptionStart를 ref로 변경
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        interruptionStartRef.current = new Date();
+      } else if (document.visibilityState === 'visible' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  const saveInterruptionSession = async (start, end) => {
+    const token = localStorage.getItem('token');
+    const payload = parseJwt(token);
+    const user_id = payload?.user_id;
+    await fetch('http://localhost:8000/report/focus-session-create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        user_id,
+        start_time: toKstMysqlDatetime(start),
+        end_time: toKstMysqlDatetime(end),
+        duration: Math.floor((end - start) / 1000),
+        is_interrupted: true
+      })
+    });
+  };
 
   if (mode === 'list') {
     return (
@@ -497,14 +561,19 @@ const DocumentAnalysis = () => {
     return (
       <div className="min-h-screen bg-[#18181b]">
         <div className="max-w-7xl mx-auto px-2 py-8">
-          <div className="flex justify-between items-center mb-4">
+          <div className="relative flex items-center mb-4 min-h-[48px]">
+            {/* 왼쪽: 강의자료 제목 */}
+            <div className="text-xl font-bold text-white">
+              {archives.find(a => a.material_id === materialId)?.title || "강의자료"}
+            </div>
+            {/* 오른쪽: 돌아가기 버튼 */}
             <button
               onClick={handleBackToList}
-              className="text-white text-2xl font-bold px-4 py-2 rounded bg-red-600 hover:bg-red-700 transition border-none shadow"
-              style={{ background: '#dc2626', color: 'white', border: 'none', cursor: 'pointer' }}
-              aria-label="돌아가기"
+              className="absolute right-0 top-0 px-6 py-2 bg-[#2d2d32] hover:bg-[#44444a] text-white rounded-xl shadow transition border-none font-semibold text-base"
+              style={{ minWidth: 110, minHeight: 40 }}
+              aria-label="학습중단"
             >
-              X
+              돌아가기
             </button>
           </div>
           <div className="flex gap-6 min-h-[600px]" style={{height: '70vh'}}>
