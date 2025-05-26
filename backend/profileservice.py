@@ -424,7 +424,6 @@ def get_avg_time_by_type(user_id: int, period: str, db: Session):
     ]
 
 # 난이도별 정답률
-
 def get_difficulty_stats(user_id: int, period: str, db: Session):
     days = {"3d": 3, "7d": 7, "30d": 30}[period]
     sql = text(f"""

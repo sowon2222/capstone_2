@@ -63,6 +63,7 @@ export default function HeaderBar() {
           >
             <span className="flex items-center gap-1">
               <Home className="w-5 h-5" />
+              <span className="ml-1">홈</span>
             </span>
             <span
               className={`block h-0.5 mt-1 rounded-full transition-all duration-200

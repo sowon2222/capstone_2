@@ -6,7 +6,8 @@ from profileservice import (
     get_user_name, get_user_accuracy, get_category_stats, get_weak_keywords,
     get_study_time_summary, get_material_upload_count, get_study_progress_change,
     get_user_percentile, get_accuracy_change_rate, get_llm_feedback, get_study_time_by_tab,
-    get_study_time_by_tab_period, get_period_accuracy, get_learning_status, get_completion_rate_trend
+    get_study_time_by_tab_period, get_period_accuracy, get_learning_status, get_completion_rate_trend,
+    get_avg_time_by_type, get_difficulty_stats
 )
 
 router = APIRouter()
@@ -29,6 +30,8 @@ def report_summary(user_id: int, period: str = "7d", db: Session = Depends(get_d
         period_accuracy = get_period_accuracy(user_id, db)
         learning_status = get_learning_status(user_id, db)
         completion_rate_trend = get_completion_rate_trend(user_id, period, db)
+        by_type = get_avg_time_by_type(user_id, period, db)
+        difficulty_stats = get_difficulty_stats(user_id, period, db)
 
         return {
             "name": name,
@@ -46,6 +49,8 @@ def report_summary(user_id: int, period: str = "7d", db: Session = Depends(get_d
             "period_accuracy": period_accuracy,
             "learning_status": learning_status,
             "completion_rate_trend": {period: completion_rate_trend},
+            "by_type": by_type,
+            "difficulty_stats": difficulty_stats,
         }
     except Exception as e:
         print("리포트 API 오류:", e)

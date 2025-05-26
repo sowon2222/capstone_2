@@ -161,6 +161,8 @@ const ReportProfile = ({ userId }) => {
       .get(`http://localhost:8000/api/report/summary?user_id=${realUserId}&period=${period}`)
       .then((res) => {
         setReport(res.data);
+        // byTypeData 실제 값 확인용 로그
+        console.log('byTypeData API 응답:', res.data.by_type);
         if (res.data && res.data.name) {
           const saved = localStorage.getItem(`goal_${res.data.name}`);
           if (saved) setGoal(JSON.parse(saved));
@@ -180,9 +182,15 @@ const ReportProfile = ({ userId }) => {
   const studyTime = report.study_time?.[period] ?? 0;
   const materialUpload = report.material_upload?.[period] ?? 0;
   const periodAccuracy = report.period_accuracy?.[period] ?? { accuracy: 0, total: 0, correct: 0 };
-  const byTypeData = report.by_type?.[period] ?? [];
-  const heatmapData = report.heatmap?.[period] ?? [];
-
+  const byTypeData = Array.isArray(report.by_type) ? report.by_type : [];
+  const difficultyStats = report.difficulty_stats ?? [];
+  // NaN/undefined/빈 값 필터링
+  const filteredByTypeData = byTypeData.filter(
+    d => typeof d.avg_time === 'number' && !isNaN(d.avg_time) && d.question_type
+  );
+  const filteredDifficultyStats = difficultyStats.filter(
+    d => typeof d.accuracy === 'number' && !isNaN(d.accuracy) && d.difficulty
+  );
   let timePercent = 0, accPercent = 0;
   if (report && report.study_time && goal.time) {
     const avgTime = Math.round(studyTime / (period === '3d' ? 3 : period === '7d' ? 7 : 30));
@@ -375,16 +383,16 @@ const ReportProfile = ({ userId }) => {
               <BarChart2 className="w-5 h-5" /> {getPeriodText(period)} 유형별 평균 풀이 시간(초)
             </div>
             <div className="w-full h-64 mt-2">
-              {byTypeData.length === 0 ? (
+              {filteredByTypeData.length === 0 ? (
                 <div className="text-[#bbbbbb] text-center mt-10">데이터 없음</div>
               ) : (
                 <Bar
                   data={{
-                    labels: byTypeData.map(d => d.question_type),
+                    labels: filteredByTypeData.map(d => d.question_type),
                     datasets: [
                       {
                         label: '평균 풀이 시간(초)',
-                        data: byTypeData.map(d => d.avg_time),
+                        data: filteredByTypeData.map(d => d.avg_time),
                         backgroundColor: '#60a5fa',
                         borderRadius: 8,
                       }
@@ -520,7 +528,7 @@ const ReportProfile = ({ userId }) => {
                   <BarChart2 className="w-5 h-5" /> {getPeriodText(period)} 난이도별 정답률
                 </div>
                 <ul className="flex flex-wrap gap-4 mt-1">
-                  {(report.difficulty_stats || []).map((diff) => (
+                  {filteredDifficultyStats.map((diff) => (
                     <li key={diff.difficulty} className="bg-[#1a1a1a] rounded-lg px-4 py-2 text-base font-medium text-[#e6e6e6] border border-[#23232a]">
                       {diff.difficulty}: <span className="text-[#b3e283]">{diff.accuracy.toFixed(1)}%</span>
                     </li>

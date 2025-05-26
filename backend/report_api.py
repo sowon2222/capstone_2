@@ -273,7 +273,7 @@ def summary_by_type_difficulty(
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy import create_engine
     # DB 연결 문자열 환경변수에서 가져오기
-    db_url = os.getenv('SQLALCHEMY_DATABASE_URL', 'mysql+pymysql://root:1234@localhost:3307/my_capstone')
+    db_url = os.getenv('SQLALCHEMY_DATABASE_URL', 'mysql+pymysql://root:1234@localhost:3307/study_platform')
     engine = create_engine(db_url)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
