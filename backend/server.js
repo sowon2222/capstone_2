@@ -28,11 +28,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MariaDB 연결 풀 설정
 const pool = mariadb.createPool({
-    host: 'localhost',
-    user: 'root',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    connectionLimit: 5
+    port: process.env.DB_PORT,
+    connectionLimit: 5,
+    allowPublicKeyRetrieval: true
 });
 
 

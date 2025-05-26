@@ -194,3 +194,5 @@ function FocusSolveHabit() {
 }
 
 export default FocusSolveHabit;
+
+export { HeatmapTable };

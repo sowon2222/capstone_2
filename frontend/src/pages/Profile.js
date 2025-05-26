@@ -173,75 +173,29 @@ const ReportProfile = ({ userId }) => {
       });
   }, [realUserId, period]);
 
+  if (loading) return <div className="text-[#bbbbbb] mt-10 ml-6">프로필 리포트를 로딩중입니다. 잠시만 기다려주세요.</div>;
+  if (!report) return <div className="text-[#bbbbbb] mt-10 ml-6">리포트 데이터가 없습니다.</div>;
+
+  // 안전하게 값 추출
+  const studyTime = report.study_time?.[period] ?? 0;
+  const materialUpload = report.material_upload?.[period] ?? 0;
+  const periodAccuracy = report.period_accuracy?.[period] ?? { accuracy: 0, total: 0, correct: 0 };
+  const byTypeData = report.by_type?.[period] ?? [];
+  const heatmapData = report.heatmap?.[period] ?? [];
+
   let timePercent = 0, accPercent = 0;
   if (report && report.study_time && goal.time) {
-    const avgTime = Math.round((report.study_time[period] || 0) / (period === '3d' ? 3 : period === '7d' ? 7 : 30));
+    const avgTime = Math.round(studyTime / (period === '3d' ? 3 : period === '7d' ? 7 : 30));
     timePercent = Math.min(100, Math.round((avgTime / goal.time) * 100));
   }
   if (report && report.accuracy && goal.accuracy) {
     accPercent = Math.min(100, Math.round((report.accuracy / goal.accuracy) * 100));
   }
 
-  if (loading) return <div className="text-[#bbbbbb] mt-10 ml-6">프로필 리포트를 로딩중입니다. 잠시만 기다려주세요.</div>;
-  if (!report) return <div className="text-[#bbbbbb] mt-10 ml-6">리포트 데이터가 없습니다.</div>;
-
-  const getPeriodText = (period) => {
-    switch(period) {
-      case '3d': return '최근 3일';
-      case '7d': return '최근 7일';
-      case '30d': return '최근 한달';
-      default: return '';
-    }
-  };
-
-  const periodLabels = ['3일', '7일', '한달'];
-  const labels = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.label) : [];
-  const studyTabData = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.study) : [];
-  const solveTabData = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.solve) : [];
-
-  const barData = {
-    labels,
-    datasets: [
-      {
-        label: '학습하기 탭',
-        data: studyTabData,
-        backgroundColor: '#60a5fa',
-        borderRadius: 8,
-      },
-      {
-        label: '문제풀기 탭',
-        data: solveTabData,
-        backgroundColor: '#4ade80',
-        borderRadius: 8,
-      },
-    ],
-  };
-  const barOptions = {
-    responsive: true,
-    plugins: {
-      legend: { position: 'top' },
-      title: { display: false },
-      tooltip: {
-        callbacks: {
-          label: (context) => `${context.dataset.label}: ${context.parsed.y}분`,
-        },
-      },
-    },
-    scales: {
-      x: { stacked: false },
-      y: {
-        beginAtZero: true,
-        title: { display: true, text: '학습 시간(분)' },
-        ticks: { stepSize: 50 },
-      },
-    },
-  };
-
-  const goalAccuracy = goal.accuracy; // 목표 정답률
-  const actualAccuracy = report.period_accuracy?.[period]?.accuracy ?? 0; // 실제 정답률
-  const totalProblems = report.period_accuracy?.[period]?.total ?? 0;
-  const correctProblems = report.period_accuracy?.[period]?.correct ?? 0;
-  const percent = goalAccuracy ? Math.round((actualAccuracy / goalAccuracy) * 100) : 0;
+  const actualAccuracy = periodAccuracy.accuracy;
+  const totalProblems = periodAccuracy.total;
+  const correctProblems = periodAccuracy.correct;
+  const percent = goal.accuracy ? Math.round((actualAccuracy / goal.accuracy) * 100) : 0;
 
   const statusData = report.learning_status || {};
   const totalStatus = 
@@ -321,6 +275,58 @@ const ReportProfile = ({ userId }) => {
     },
   };
 
+  const getPeriodText = (period) => {
+    switch(period) {
+      case '3d': return '최근 3일';
+      case '7d': return '최근 7일';
+      case '30d': return '최근 한달';
+      default: return '';
+    }
+  };
+
+  const periodLabels = ['3일', '7일', '한달'];
+  const labels = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.label) : [];
+  const studyTabData = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.study) : [];
+  const solveTabData = Array.isArray(report.study_time_by_tab_period) ? report.study_time_by_tab_period.map(d => d.solve) : [];
+
+  const barData = {
+    labels,
+    datasets: [
+      {
+        label: '학습하기 탭',
+        data: studyTabData,
+        backgroundColor: '#60a5fa',
+        borderRadius: 8,
+      },
+      {
+        label: '문제풀기 탭',
+        data: solveTabData,
+        backgroundColor: '#4ade80',
+        borderRadius: 8,
+      },
+    ],
+  };
+  const barOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      title: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context) => `${context.dataset.label}: ${context.parsed.y}분`,
+        },
+      },
+    },
+    scales: {
+      x: { stacked: false },
+      y: {
+        beginAtZero: true,
+        title: { display: true, text: '학습 시간(분)' },
+        ticks: { stepSize: 50 },
+      },
+    },
+  };
+
   return (
     <div className="max-w-5xl mx-auto mt-12 p-6 bg-[#18181b] rounded-2xl shadow-lg border border-[#23232a] text-[#e6e6e6]">
       <div className="flex justify-between items-center mb-6">
@@ -354,7 +360,7 @@ const ReportProfile = ({ userId }) => {
         {/* 왼쪽: 목표/달성률/AI 피드백 */}
         <div className="flex-1 flex flex-col gap-6 min-w-[320px]">
           <GoalSetting username={report.name || "default"} onGoalChange={setGoal} />
-          {/* 1. 기간별 학습 시간 막대그래프 */}
+          {/* 1. 기간별 학습 시간 막대그래프 (숨김 처리) */}
           <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow">
             <div className="flex items-center gap-2 text-base font-semibold text-[#b3e283]">
               <Clock className="w-5 h-5" /> 기간별 학습 시간
@@ -363,7 +369,44 @@ const ReportProfile = ({ userId }) => {
               <Bar data={barData} options={barOptions} />
             </div>
           </div>
-          {/* 2. 정답률 목표 달성률 박스 */}
+          {/* 2. 유형별 평균 풀이 시간 그래프 (왼쪽으로 이동) */}
+          <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow">
+            <div className="flex items-center gap-2 text-base font-semibold text-[#8abfff]">
+              <BarChart2 className="w-5 h-5" /> {getPeriodText(period)} 유형별 평균 풀이 시간(초)
+            </div>
+            <div className="w-full h-64 mt-2">
+              {byTypeData.length === 0 ? (
+                <div className="text-[#bbbbbb] text-center mt-10">데이터 없음</div>
+              ) : (
+                <Bar
+                  data={{
+                    labels: byTypeData.map(d => d.question_type),
+                    datasets: [
+                      {
+                        label: '평균 풀이 시간(초)',
+                        data: byTypeData.map(d => d.avg_time),
+                        backgroundColor: '#60a5fa',
+                        borderRadius: 8,
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                      x: { stacked: false },
+                      y: {
+                        beginAtZero: true,
+                        title: { display: true, text: '평균 풀이 시간(초)' },
+                        ticks: { stepSize: 10 },
+                      },
+                    },
+                  }}
+                />
+              )}
+            </div>
+          </div>
+          {/* 3. 정답률 목표 달성률 박스 */}
           <div className="bg-[#23232a] rounded-xl p-6 flex flex-col items-center shadow w-full">
             <div className="text-base font-semibold text-[#8abfff] mb-2">
               <span className="text-[#b3e283]">정답률 목표 달성률</span>
@@ -381,7 +424,7 @@ const ReportProfile = ({ userId }) => {
               {correctProblems}문제 / {totalProblems}문제
             </div>
             <div className="text-sm text-[#bbbbbb] mt-1">
-              실제: {actualAccuracy.toFixed(1)}%&nbsp;&nbsp;|&nbsp;&nbsp;목표: {goalAccuracy}%
+              실제: {actualAccuracy.toFixed(1)}%&nbsp;&nbsp;|&nbsp;&nbsp;목표: {goal.accuracy}%
             </div>
           </div>
           <div className="bg-[#23232a] rounded-xl p-6 mt-2 shadow flex flex-col gap-2">
@@ -457,24 +500,40 @@ const ReportProfile = ({ userId }) => {
                 </div>
               </div>
             </div>
-            <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow">
-              <div className="flex items-center gap-2 text-lg font-semibold text-[#f7c873]">
-                <Layers className="w-5 h-5" /> {getPeriodText(period)} 유형별 정답률
+            <div className="flex gap-6">
+              {/* 유형별 정답률 카드 */}
+              <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow flex-1 min-w-[220px]">
+                <div className="flex items-center gap-2 text-lg font-semibold text-[#f7c873]">
+                  <Layers className="w-5 h-5" /> {getPeriodText(period)} 유형별 정답률
+                </div>
+                <ul className="flex flex-wrap gap-4 mt-1">
+                  {(report.category_stats || []).map((cat) => (
+                    <li key={cat.question_type} className="bg-[#1a1a1a] rounded-lg px-4 py-2 text-base font-medium text-[#e6e6e6] border border-[#23232a]">
+                      {cat.question_type}: <span className="text-[#b3e283]">{cat.accuracy.toFixed(1)}%</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="flex flex-wrap gap-4 mt-1">
-                {report.category_stats.map((cat) => (
-                  <li key={cat.question_type} className="bg-[#1a1a1a] rounded-lg px-4 py-2 text-base font-medium text-[#e6e6e6] border border-[#23232a]">
-                    {cat.question_type}: <span className="text-[#b3e283]">{cat.accuracy.toFixed(1)}%</span> <span className="text-[#bbbbbb]">(시도 {cat.attempts}회)</span>
-                  </li>
-                ))}
-              </ul>
+              {/* 난이도별 정답률 카드 */}
+              <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow flex-1 min-w-[220px]">
+                <div className="flex items-center gap-2 text-lg font-semibold text-[#8abfff]">
+                  <BarChart2 className="w-5 h-5" /> {getPeriodText(period)} 난이도별 정답률
+                </div>
+                <ul className="flex flex-wrap gap-4 mt-1">
+                  {(report.difficulty_stats || []).map((diff) => (
+                    <li key={diff.difficulty} className="bg-[#1a1a1a] rounded-lg px-4 py-2 text-base font-medium text-[#e6e6e6] border border-[#23232a]">
+                      {diff.difficulty}: <span className="text-[#b3e283]">{diff.accuracy.toFixed(1)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
             <div className="bg-[#23232a] rounded-xl p-6 shadow w-full col-span-2">
               <div className="text-lg font-bold mb-4 flex items-center gap-2 text-[#f7c873]">
                 <AlertCircle className="text-[#f7c873]" /> 이번 달 가장 많이 틀린 개념
               </div>
               <ol className="space-y-2">
-                {(report.weak_keywords.slice(0, 3)).map((kw, i) => (
+                {(report.weak_keywords || []).slice(0, 3).map((kw, i) => (
                   <li key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="w-7 h-7 flex items-center justify-center rounded-full bg-[#f7c873] text-[#23232a] font-bold text-base">
@@ -492,13 +551,13 @@ const ReportProfile = ({ userId }) => {
               <div className="flex items-center gap-2 text-lg font-semibold text-[#b3e283]">
                 <Clock className="w-5 h-5" /> {getPeriodText(period)} 학습 시간
               </div>
-              <div className="text-2xl font-bold text-[#b3e283]">{report.study_time[period]}분</div>
+              <div className="text-2xl font-bold text-[#b3e283]">{studyTime}분</div>
             </div>
             <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow">
               <div className="flex items-center gap-2 text-lg font-semibold text-[#8abfff]">
                 <FileText className="w-5 h-5" /> {getPeriodText(period)} 강의자료 업로드
               </div>
-              <div className="text-2xl font-bold text-[#8abfff]">{report.material_upload[period]}개</div>
+              <div className="text-2xl font-bold text-[#8abfff]">{materialUpload}개</div>
             </div>
             <div className="bg-[#23232a] rounded-xl p-4 flex flex-col gap-2 shadow col-span-2">
               <div className="flex items-center justify-between mb-2">

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Query, FastAPI, Body
 import pymysql
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta, date
+from profileservice import get_avg_time_by_type, get_difficulty_stats
 
 load_dotenv()
 
@@ -261,6 +262,30 @@ def focus_session_create(
         return {"success": True}
     finally:
         conn.close()
+
+@router.get("/report/summary-by-type-difficulty")
+def summary_by_type_difficulty(
+    user_id: int = Query(...),
+    period: str = Query("7d")
+):
+    # DB 세션 생성
+    import sqlalchemy
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import create_engine
+    # DB 연결 문자열 환경변수에서 가져오기
+    db_url = os.getenv('SQLALCHEMY_DATABASE_URL', 'mysql+pymysql://root:1234@localhost:3307/my_capstone')
+    engine = create_engine(db_url)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        by_type = get_avg_time_by_type(user_id, period, db)
+        difficulty_stats = get_difficulty_stats(user_id, period, db)
+        return {
+            "by_type": by_type,
+            "difficulty_stats": difficulty_stats
+        }
+    finally:
+        db.close()
 
 app.add_middleware(
     CORSMiddleware,

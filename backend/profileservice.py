@@ -405,3 +405,38 @@ def get_completion_rate_trend(user_id: int, period: str, db: Session):
             percent = (completed / total * 100) if total > 0 else 0.0
             result.append(percent)
     return result
+
+# 유형별 평균 풀이 시간 (문제 1개당 5분=300초로 임의 계산)
+def get_avg_time_by_type(user_id: int, period: str, db: Session):
+    days = {"3d": 3, "7d": 7, "30d": 30}[period]
+    sql = text(f"""
+        SELECT q.question_type, COUNT(*) * 300 AS avg_time
+        FROM question_attempts a
+        JOIN questions q ON a.question_id = q.question_id
+        WHERE a.user_id = :user_id
+          AND a.attempt_date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+        GROUP BY q.question_type
+    """)
+    result = db.execute(sql, {"user_id": user_id}).fetchall()
+    return [
+        {"question_type": row[0], "avg_time": float(row[1]) if row[1] is not None else 0}
+        for row in result
+    ]
+
+# 난이도별 정답률
+
+def get_difficulty_stats(user_id: int, period: str, db: Session):
+    days = {"3d": 3, "7d": 7, "30d": 30}[period]
+    sql = text(f"""
+        SELECT q.difficulty, SUM(a.is_correct) / NULLIF(COUNT(*), 0) * 100 AS accuracy
+        FROM question_attempts a
+        JOIN questions q ON a.question_id = q.question_id
+        WHERE a.user_id = :user_id
+          AND a.attempt_date >= DATE_SUB(CURDATE(), INTERVAL {days} DAY)
+        GROUP BY q.difficulty
+    """)
+    result = db.execute(sql, {"user_id": user_id}).fetchall()
+    return [
+        {"difficulty": row[0], "accuracy": float(row[1]) if row[1] is not None else 0}
+        for row in result
+    ]
