@@ -179,7 +179,7 @@ export default function HomePage() {
         <div className="flex-1 min-w-[280px] max-w-sm">
           <div className="bg-[#18181b] rounded-2xl shadow-lg p-6 h-full flex flex-col">
             <div className="font-semibold text-xl mb-4">집중/중단 타임라인</div>
-            <BlockTimeline sessions={todaySessions} />
+            <BlockTimeline sessions={focusSessions} date="2025-05-27" />
           </div>
         </div>
         {/* 오른쪽: 큐레이션 + 학습중/완료 */}

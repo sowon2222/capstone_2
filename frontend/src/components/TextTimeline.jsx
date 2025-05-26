@@ -1,6 +1,9 @@
 import React from 'react';
 
-function BlockTimeline({ sessions }) {
+function BlockTimeline({ sessions, date = '2025-05-27' }) {
+  // 디버깅용 콘솔
+  console.log('BlockTimeline sessions:', sessions);
+  console.log('BlockTimeline date:', date);
   // 8~18시, 3분 단위 20칸
   const hours = Array.from({ length: 11 }, (_, i) => i + 8);
   const BLOCKS_PER_HOUR = 20;
@@ -12,14 +15,18 @@ function BlockTimeline({ sessions }) {
     hourBlocks[h] = Array(BLOCKS_PER_HOUR).fill(null);
   });
 
-  // 날짜 필터링 제거 - 모든 세션 표시
-  const filteredSessions = sessions || [];
+  // 날짜 필터링 추가
+  const filteredSessions = (sessions || []).filter(
+    s => s.start_time.slice(0, 10) === date
+  );
+  console.log('BlockTimeline filteredSessions:', filteredSessions);
 
   filteredSessions.forEach(s => {
     // 각 세션의 날짜(YYYY-MM-DD)를 추출
     const sessionDateStr = s.start_time.slice(0, 10);
-    const start = new Date(s.start_time);
-    const end = s.end_time ? new Date(s.end_time) : new Date(s.start_time);
+    // 공백이 있으면 T로 바꿔서 파싱 (ISO/DB 포맷 모두 지원)
+    const start = new Date(s.start_time.replace(' ', 'T'));
+    const end = s.end_time ? new Date(s.end_time.replace(' ', 'T')) : new Date(s.start_time.replace(' ', 'T'));
     for (let h = 8; h <= 18; h++) {
       for (let i = 0; i < BLOCKS_PER_HOUR; i++) {
         const blockStart = new Date(`${sessionDateStr}T${String(h).padStart(2, '0')}:${String(i * 3).padStart(2, '0')}:00`);
@@ -27,11 +34,12 @@ function BlockTimeline({ sessions }) {
         blockEnd.setMinutes(blockEnd.getMinutes() + BLOCK_MINUTES);
         // 블록이 세션과 겹치면 색칠
         if (blockEnd > start && blockStart < end) {
-          hourBlocks[h][i] = s.is_interrupted ? 'break' : 'focus';
+          hourBlocks[h][i] = String(s.is_interrupted) === '1' ? 'break' : 'focus';
         }
       }
     }
   });
+  console.log('BlockTimeline hourBlocks:', hourBlocks);
 
   return (
     <div className="flex flex-col items-center">
@@ -42,23 +50,26 @@ function BlockTimeline({ sessions }) {
               {hour}시
             </div>
             <div className="flex gap-0">
-              {hourBlocks[hour].map((block, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: 13,
-                    height: 13,
-                    borderRadius: 3,
-                    display: 'inline-block',
-                    cursor: 'pointer',
-                    border: block === 'focus' ? '1.5px solid #60a5fa' : block === 'break' ? '1.5px solid #f87171' : '1.5px solid #444',
-                    background: block === 'focus' ? '#60a5fa' : block === 'break' ? '#f87171' : 'transparent',
-                    marginRight: 1,
-                    marginBottom: 1,
-                  }}
-                  title={block === 'focus' ? '집중' : block === 'break' ? '중단' : ''}
-                />
-              ))}
+              {hourBlocks[hour].map((block, i) => {
+                console.log('block', hour, i, block);
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: 13,
+                      height: 13,
+                      borderRadius: 3,
+                      display: 'inline-block',
+                      cursor: 'pointer',
+                      border: block === 'focus' ? '1.5px solid #60a5fa' : block === 'break' ? '1.5px solid #f87171' : '1.5px solid #444',
+                      background: block === 'focus' ? '#60a5fa' : block === 'break' ? '#f87171' : 'transparent',
+                      marginRight: 1,
+                      marginBottom: 1,
+                    }}
+                    title={block === 'focus' ? '집중' : block === 'break' ? '중단' : ''}
+                  />
+                );
+              })}
             </div>
           </div>
         ))}

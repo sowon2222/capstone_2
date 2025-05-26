@@ -108,10 +108,10 @@ function FocusDashboard() {
     }
   };
 
-  // 오늘 날짜의 세션만 필터링
-  const today = getTodayStr();
+  // 2025-05-27로 강제 필터링
+  const targetDate = '2025-05-27';
   const todaySessions = (data?.focus_sessions || []).filter(
-    s => s.start_time.slice(0, 10) === today
+    s => s.start_time.slice(0, 10) === targetDate
   );
 
   return (
