@@ -192,3 +192,4 @@ CREATE TABLE `study_sessions` (
   CONSTRAINT `study_sessions_ibfk_2` FOREIGN KEY (`material_id`) REFERENCES `lecture_materials` (`material_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
+ALTER TABLE lecture_materials ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
