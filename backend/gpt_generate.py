@@ -24,7 +24,8 @@ def generate_quiz(
     keywords: list = Body(...),
     important_sentences: list = Body(...),
     slide_summary: str = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    force_difficulty: str = Body(None)
 ):
     # 난이도 기준 정의
     difficulty_levels = [
@@ -49,6 +50,9 @@ def generate_quiz(
     ]
     selected = random.choice(difficulty_levels)
     difficulty = selected["level"]
+
+    if force_difficulty:
+        difficulty = force_difficulty
 
     prompt = f"""
 너는 대학 강의 기반 문제 생성 AI야.
@@ -352,6 +356,7 @@ def generate_material_quiz(
 def generate_bulk_quiz(
     material_id: int = Body(...),
     slide_ids: list = Body(...),
+    target_difficulty: str = Body(None),
     db: Session = Depends(get_db)
 ):
     # slide_ids로 슬라이드 정보 조회
@@ -371,6 +376,7 @@ def generate_bulk_quiz(
                 if keyword_obj:
                     keyword_id = keyword_obj.keyword_id
         try:
+            # 난이도 강제 적용
             result = generate_quiz(
                 slide_id=slide.slide_id,
                 keyword_id=keyword_id or 0,
@@ -380,7 +386,8 @@ def generate_bulk_quiz(
                 keywords=keywords,
                 important_sentences=(slide.important_sentences or '').split('\n'),
                 slide_summary=slide.summary or '',
-                db=db
+                db=db,
+                force_difficulty=target_difficulty
             )
             generated_questions.append(result)
         except Exception as e:

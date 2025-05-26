@@ -722,6 +722,62 @@ app.get('/api/study-session/:sessionId', authenticateToken, async (req, res) => 
     }
 });
 
+// 키워드로 슬라이드 검색 API
+app.get('/api/keyword/:keyword/slides', authenticateToken, async (req, res) => {
+    const keyword = req.params.keyword;
+    const userId = req.user.user_id;
+    try {
+        const slides = await pool.query(
+            `SELECT s.*, lm.material_name 
+             FROM slides s
+             JOIN lecture_materials lm ON s.material_id = lm.material_id
+             JOIN slide_keywords sk ON s.slide_id = sk.slide_id
+             JOIN keywords k ON sk.keyword_id = k.keyword_id
+             WHERE k.keyword_name = ? AND lm.user_id = ?
+             ORDER BY lm.created_at DESC, s.slide_number`,
+            [keyword, userId]
+        );
+        res.json(slides);
+    } catch (err) {
+        console.error('키워드 슬라이드 검색 오류:', err);
+        res.status(500).json({ error: '키워드 슬라이드 검색 오류' });
+    }
+});
+
+// 특정 question_id로 슬라이드 요약 반환
+app.get('/api/question/:question_id/slide-summary', authenticateToken, async (req, res) => {
+    const questionId = req.params.question_id;
+    try {
+        // 1. question_id로 slide_id 찾기
+        const [question] = await pool.query(
+            'SELECT slide_id FROM questions WHERE question_id = ?',
+            [questionId]
+        );
+        if (!question) return res.status(404).json({ error: '해당 문제 없음' });
+
+        // 2. slide_id로 slide summary 등 정보 찾기
+        const [slide] = await pool.query(
+            'SELECT slide_id, slide_number, summary, slide_title, concept_explanation, material_id FROM slides WHERE slide_id = ?',
+            [question.slide_id]
+        );
+        if (!slide) return res.status(404).json({ error: '해당 슬라이드 없음' });
+
+        // 3. 자료명도 추가로 반환
+        const [material] = await pool.query(
+            'SELECT material_name FROM lecture_materials WHERE material_id = ?',
+            [slide.material_id]
+        );
+
+        res.json({
+            ...slide,
+            material_name: material ? material.material_name : null
+        });
+    } catch (err) {
+        console.error('슬라이드 요약 조회 오류:', err);
+        res.status(500).json({ error: '슬라이드 요약 조회 오류' });
+    }
+});
+
 // 서버 시작
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {

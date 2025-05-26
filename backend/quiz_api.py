@@ -14,7 +14,7 @@ router = APIRouter()
 def get_wrong_notes(user_id: int, db: Session = Depends(get_db)):
     results = db.execute(
         text("""
-            SELECT q.content, q.question_type, k.keyword_name, qa.answer, q.answer, q.explanation, qa.is_correct, qa.attempt_date
+            SELECT q.question_id, q.content, q.question_type, k.keyword_name, qa.answer, q.answer, q.explanation, qa.is_correct, qa.attempt_date
             FROM question_attempts qa
             JOIN questions q ON qa.question_id = q.question_id
             JOIN question_keywords qk ON q.question_id = qk.question_id
@@ -25,14 +25,15 @@ def get_wrong_notes(user_id: int, db: Session = Depends(get_db)):
     ).fetchall()
     return [
         {
-            "question": row[0],
-            "type": row[1],
-            "keyword": row[2],
-            "user_answer": row[3],
-            "correct_answer": row[4],
-            "explanation": row[5],
-            "is_correct": row[6],
-            "attempt_date": str(row[7]) if row[7] else None
+            "question_id": row[0],
+            "question": row[1],
+            "type": row[2],
+            "keyword": row[3],
+            "user_answer": row[4],
+            "correct_answer": row[5],
+            "explanation": row[6],
+            "is_correct": row[7],
+            "attempt_date": str(row[8]) if row[8] else None
         }
         for row in results
     ]

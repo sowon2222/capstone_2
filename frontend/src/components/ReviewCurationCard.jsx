@@ -38,55 +38,15 @@ function ReviewCurationCard() {
 
   // 데이터가 없을 때도 카드 형태의 기본 UI를 보여줌
   if (!cards.length) return (
-    <div className="w-full max-w-2xl" style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      margin: '0 auto',
-      width: '100%'
-    }}>
-      <div style={{
-        border: '1px solid #23232a', // 카드 테두리 색
-        borderRadius: 8,
-        padding: 16,
-        background: '#23232a',      // 카드 바탕색(배경색)
-        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-        marginBottom: 8,
-        width: '100%',
-        boxSizing: 'border-box',
-        textAlign: 'center',
-        color: '#fff',              // 카드 내 글씨색
-        fontSize: 16
-      }}>
-        복습 추천 키워드가 없습니다.
-      </div>
+    <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 w-full min-h-[120px] flex items-center justify-center text-[#bbbbbb] text-base">
+      복습 추천 키워드가 없습니다.
     </div>
   );
 
   const card = cards[0];
   if (!card) return (
-    <div className="w-full max-w-2xl" style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      margin: '0 auto',
-      width: '100%'
-    }}>
-      <div style={{
-        border: '1px solid #23232a', // 카드 테두리 색
-        borderRadius: 8,
-        padding: 16,
-        background: '#23232a',      // 카드 바탕색(배경색)
-        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-        marginBottom: 8,
-        width: '100%',
-        boxSizing: 'border-box',
-        textAlign: 'center',
-        color: '#fff',              // 카드 내 글씨색
-        fontSize: 16
-      }}>
-        복습 추천 키워드가 없습니다.
-      </div>
+    <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 w-full min-h-[120px] flex items-center justify-center text-[#bbbbbb] text-base">
+      복습 추천 키워드가 없습니다.
     </div>
   );
 
@@ -99,78 +59,41 @@ function ReviewCurationCard() {
   };
 
   return (
-    <div className="w-full max-w-2xl" style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
-      margin: '0 auto',
-      width: '100%'
-    }}>
-      <div key={card.question_id} style={{
-        border: '1px solid #23232a', // 카드 테두리 색
-        borderRadius: 8,
-        padding: 16,
-        background: '#23232a',      // 카드 바탕색(배경색)
-        boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-        marginBottom: 8,
-        width: '100%',
-        boxSizing: 'border-box'
-      }}>
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>
-          <b>키워드:</b> {card.keyword_name}
+    <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 w-full min-h-[120px] flex flex-col gap-3">
+      <div key={card.question_id}>
+        <div className="text-xs text-[#bbbbbb] mb-1">
+          <b className="text-[#346aff]">키워드:</b> {card.keyword_name}
         </div>
-        <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>
+        <div className="font-bold text-base text-white mb-3">
           Q. {getQuestionText(card.content)}
         </div>
-        <form onSubmit={handleSubmit} style={{ marginBottom: 8, display: 'flex', alignItems: 'center' }}>
+        <form onSubmit={handleSubmit} className="flex flex-row items-center gap-2 mb-2">
           <input
             type="text"
             value={answer}
             onChange={e => setAnswer(e.target.value)}
             placeholder="정답을 입력하세요"
-            style={{
-              padding: '8px',
-              border: '1px solid #bbb',
-              borderRadius: 4,
-              width: '50%',
-              marginRight: 8,
-              color: '#000'
-            }}
             disabled={showSolution}
+            className="px-3 py-2 rounded-lg border border-[#444] bg-[#18181b] text-white focus:outline-none focus:border-[#346aff] w-4/5 min-w-[120px]"
           />
           <button
             type="submit"
-            style={{
-              padding: '8px 16px',
-              background: '#2563eb',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              marginRight: 8,
-              fontSize: 16,
-              height: 40,
-              minWidth: 90
-            }}
             disabled={showSolution}
+            className={`px-4 py-2 rounded-lg font-semibold text-white transition-colors ${showSolution ? 'bg-[#bbb] cursor-not-allowed' : 'bg-[#346aff] hover:bg-[#2554b0] cursor-pointer'}`}
           >
             제출
           </button>
           {/* 정답 여부 텍스트 */}
           {showSolution && card.answer !== undefined && (
-            <span style={{ display: 'flex', alignItems: 'center', marginLeft: 8 }}>
-              {isCorrect ? (
-                <span style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 14 }}>정답!</span>
-              ) : (
-                <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: 14 }}>오답!</span>
-              )}
+            <span className={`ml-2 font-bold ${isCorrect ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+              {isCorrect ? '정답!' : '오답!'}
             </span>
           )}
         </form>
         {/* 해설: 정답 제출 후에만 summary(프리픽스 제거) 노출 */}
         {showSolution && (
-          <div style={{ color: '#fff', marginBottom: 4 }}>
-            <b>해설:</b> {getFilteredSummary(card.summary) || '해설이 없습니다.'}
+          <div className="text-[#bbbbbb] mt-2">
+            <b className="text-white">해설:</b> {getFilteredSummary(card.summary) || '해설이 없습니다.'}
           </div>
         )}
       </div>

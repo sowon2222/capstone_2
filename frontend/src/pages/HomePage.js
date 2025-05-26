@@ -22,6 +22,7 @@ export default function HomePage() {
   const [userName, setUserName] = useState('guest');
   const [showLoginAlert, setShowLoginAlert] = useState(false);
   const [focusSessions, setFocusSessions] = useState([]);
+  const [ranking, setRanking] = useState(null);
   
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -136,6 +137,25 @@ export default function HomePage() {
     console.log('focusSessions:', focusSessions);
   }, [focusSessions]);
 
+  // 랭킹 정보 가져오기
+  useEffect(() => {
+    if (!token) {
+      setRanking(null);
+      return;
+    }
+    fetch('http://localhost:3000/api/ranking', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setRanking(data);
+      })
+      .catch(err => {
+        console.error('랭킹 조회 오류:', err);
+        setRanking(null);
+      });
+  }, [token]);
+
   function getTodayStr() {
     const today = new Date();
     return today.toISOString().slice(0, 10);
@@ -151,135 +171,145 @@ export default function HomePage() {
         {token && userName && userName !== 'guest' ? `${userName}님, 오늘도 힘내요!` : 'guest님, 오늘도 힘내요!'}
       </div>
 
-      {/* 잔디그래프 */}
-      <div className="mb-10 w-full">
-        <div className="bg-[#18181b] rounded-2xl p-6 text-white shadow-md w-full flex flex-col items-center max-w-3xl mx-auto">
-          <div className="w-full max-w-3xl mx-auto">
-            <div className="font-semibold text-xl mb-4 text-center">🌱 나의 학습 그래프</div>
-            <CalendarHeatmap
-              startDate={new Date(`${selectedYear}-01-01`)}
-              endDate={new Date(`${selectedYear}-12-31`)}
-              values={heatmapData}
-              classForValue={value => {
-                if (!value) return 'color-empty';
-                if (value.count >= 3) return 'color-github-4';
-                if (value.count === 2) return 'color-github-3';
-                if (value.count === 1) return 'color-github-2';
-                return 'color-github-1';
-              }}
-              showWeekdayLabels={true}
-            />
+      {/* 상단: 잔디그래프 + 오늘 학습시간/랭킹 2단 배치 */}
+      <div className="mb-10 w-full flex flex-row gap-8 justify-center items-stretch max-w-7xl mx-auto">
+        {/* 왼쪽: 잔디그래프 (넓게) */}
+        <div className="flex-1 flex flex-col justify-center items-center bg-gradient-to-br from-[#23232a] via-[#18181b] to-[#23232a] rounded-2xl text-white shadow-lg p-8 w-full transition-transform hover:scale-[1.015] hover:shadow-2xl min-w-[400px]">
+          <div className="w-full flex flex-row items-center gap-3 mb-4">
+            <span className="text-2xl">🌱</span>
+            <span className="font-extrabold text-xl tracking-tight">나의 학습 그래프</span>
+          </div>
+          <CalendarHeatmap
+            startDate={new Date(`${selectedYear}-01-01`)}
+            endDate={new Date(`${selectedYear}-12-31`)}
+            values={heatmapData}
+            classForValue={value => {
+              if (!value) return 'color-empty';
+              if (value.count >= 3) return 'color-github-4';
+              if (value.count === 2) return 'color-github-3';
+              if (value.count === 1) return 'color-github-2';
+              return 'color-github-1';
+            }}
+            showWeekdayLabels={true}
+          />
+        </div>
+        {/* 오른쪽: 오늘 학습시간 + 랭킹 세로 배치 */}
+        <div className="flex-1 flex flex-row gap-6 justify-center min-w-[260px] max-w-md items-stretch">
+          <div className="bg-[#18181b] rounded-2xl shadow-lg p-8 flex flex-col items-center justify-center flex-1">
+            <div className="text-base text-white mb-2">오늘 학습 시간</div>
+            <div className="text-2xl font-extrabold text-white">{todayStudyTime ?? '0초'}</div>
+          </div>
+          <div className="bg-[#18181b] rounded-2xl shadow-lg p-8 flex flex-col items-center justify-center flex-1">
+            <div className="font-bold text-lg text-white">랭킹</div>
+            {!token ? (
+              <div className="text-[#bbbbbb] text-center mt-2">로그인 후 이용 가능합니다</div>
+            ) : ranking ? (
+              <div className="text-center mt-2">
+                <div className="text-2xl font-extrabold text-white">{ranking.rank}위</div>
+                <div className="text-sm text-[#bbbbbb] mt-1">상위 {ranking.percentile}%</div>
+                <div className="text-xs text-[#666666] mt-1">전체 {ranking.total_users}명 중</div>
+              </div>
+            ) : (
+              <div className="text-[#bbbbbb] text-center mt-2">랭킹 정보 없음</div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 중앙 2단 그리드 */}
-      <div className="flex flex-row gap-8 mb-10">
+      {/* 주요 정보: 집중/중단 타임라인 + 학습중/완료/문제풀이 */}
+      <div className="flex flex-row gap-8 mb-10 max-w-7xl mx-auto mt-5">
         {/* 왼쪽: 집중/중단 타임라인 */}
-        <div className="flex-1 min-w-[280px] max-w-sm">
+        <div className="flex-1 min-w-[280px] max-w-md">
           <div className="bg-[#18181b] rounded-2xl shadow-lg p-6 h-full flex flex-col">
             <div className="font-semibold text-xl mb-4">집중/중단 타임라인</div>
             <BlockTimeline sessions={focusSessions} date="2025-05-27" />
           </div>
         </div>
-        {/* 오른쪽: 큐레이션 + 학습중/완료 */}
-        <div className="flex-[2] flex flex-col gap-6">
-          {/* 큐레이션 */}
-          <div className="bg-[#18181b] rounded-2xl shadow-lg p-6">
+        {/* 오른쪽: 학습중/완료/문제풀이 카드 */}
+        <div className="flex-[2] mt-[90px]">
+          <div className="w-full max-w-3xl mx-auto flex flex-col gap-6">
+            {/* 학습중/완료 자료: 한 줄 */}
+            <div className="flex flex-row gap-6 w-full">
+              <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 flex-1 min-h-[160px] flex flex-col">
+                <div className="font-bold text-lg mb-2">학습중 자료</div>
+                {!token ? (
+                  <div className="text-center text-[#bbbbbb] py-6">로그인 후 이용 가능합니다</div>
+                ) : studyingFiles.length === 0 ? (
+                  <div className="text-[#bbbbbb] text-center py-6">학습중인 자료가 없습니다.</div>
+                ) : (
+                  <>
+                    <ul className="flex flex-col gap-1">
+                      {studyingFiles.slice(0, 3).map(f => (
+                        <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
+                          <span className="truncate max-w-xs">{f.title}</span>
+                          <button
+                            onClick={e => {
+                              e.preventDefault();
+                              navigate('/document-analysis', { state: { materialId: f.material_id } });
+                            }}
+                            className="text-[#346aff] hover:underline"
+                          >
+                            이어하기
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {studyingFiles.length > 3 && (
+                      <div className="flex justify-end">
+                        <span
+                          onClick={() => navigate('/document-analysis')}
+                          style={{ color: '#e0e0e0', cursor: 'pointer', fontWeight: 500, fontSize: '15px' }}
+                          className="mt-2 hover:underline"
+                        >
+                          + 더보기
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 flex-1 min-h-[160px] flex flex-col">
+                <div className="font-bold text-lg mb-2">학습완료 자료</div>
+                {!token ? (
+                  <div className="text-center text-[#bbbbbb] py-6">로그인 후 이용 가능합니다</div>
+                ) : completedFiles.length === 0 ? (
+                  <div className="text-[#bbbbbb] text-center py-6">학습완료 자료가 없습니다.</div>
+                ) : (
+                  <>
+                    <ul className="flex flex-col gap-1">
+                      {completedFiles.slice(0, 3).map(f => (
+                        <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
+                          <span className="truncate max-w-xs">{f.title}</span>
+                          <button
+                            onClick={e => {
+                              e.preventDefault();
+                              navigate(`/archive/${f.material_id}`);
+                            }}
+                            className="text-[#346aff] hover:underline"
+                          >
+                            복습하기
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {completedFiles.length > 3 && (
+                      <div className="flex justify-end">
+                        <span
+                          onClick={() => navigate('/document-analysis')}
+                          style={{ color: '#e0e0e0', cursor: 'pointer', fontWeight: 500, fontSize: '15px' }}
+                          className="mt-2 hover:underline"
+                        >
+                          + 더보기
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+            {/* 문제풀이 카드: 위 두 카드와 정확히 가로 맞춤 */}
             <ReviewCurationCard />
           </div>
-          {/* 학습중/완료 2단 그리드 */}
-          <div className="flex flex-row gap-6">
-            {/* 학습중 자료 */}
-            <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 flex-1">
-              <div className="font-bold text-lg mb-2">학습중 자료</div>
-              {!token ? (
-                <div className="text-center text-[#bbbbbb] py-6">로그인 후 이용 가능합니다</div>
-              ) : studyingFiles.length === 0 ? (
-                <div className="text-[#bbbbbb] text-center py-6">학습중인 자료가 없습니다.</div>
-              ) : (
-                <>
-                  <ul className="flex flex-col gap-1">
-                    {studyingFiles.slice(0, 3).map(f => (
-                      <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
-                        <span className="truncate max-w-xs">{f.title}</span>
-                        <button
-                          onClick={e => {
-                            e.preventDefault();
-                            navigate('/document-analysis', { state: { materialId: f.material_id } });
-                          }}
-                          className="text-[#346aff] hover:underline"
-                        >
-                          이어하기
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {studyingFiles.length > 3 && (
-                    <div className="flex justify-end">
-                      <span
-                        onClick={() => navigate('/document-analysis')}
-                        style={{ color: '#e0e0e0', cursor: 'pointer', fontWeight: 500, fontSize: '15px' }}
-                        className="mt-2 hover:underline"
-                      >
-                        + 더보기
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            {/* 학습완료 자료 */}
-            <div className="bg-[#23232a] rounded-2xl shadow-lg p-6 flex-1">
-              <div className="font-bold text-lg mb-2">학습완료 자료</div>
-              {!token ? (
-                <div className="text-center text-[#bbbbbb] py-6">로그인 후 이용 가능합니다</div>
-              ) : completedFiles.length === 0 ? (
-                <div className="text-[#bbbbbb] text-center py-6">학습완료 자료가 없습니다.</div>
-              ) : (
-                <>
-                  <ul className="flex flex-col gap-1">
-                    {completedFiles.slice(0, 3).map(f => (
-                      <li key={f.material_id} className="flex justify-between items-center py-1 border-b border-[#23232a] last:border-b-0">
-                        <span className="truncate max-w-xs">{f.title}</span>
-                        <button
-                          onClick={e => {
-                            e.preventDefault();
-                            navigate(`/archive/${f.material_id}`);
-                          }}
-                          className="text-[#346aff] hover:underline"
-                        >
-                          복습하기
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {completedFiles.length > 3 && (
-                    <div className="flex justify-end">
-                      <span
-                        onClick={() => navigate('/document-analysis')}
-                        style={{ color: '#e0e0e0', cursor: 'pointer', fontWeight: 500, fontSize: '15px' }}
-                        className="mt-2 hover:underline"
-                      >
-                        + 더보기
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 오늘학습/랭킹 2단 */}
-      <div className="flex flex-row gap-8 mb-10">
-        <div className="bg-[#18181b] rounded-2xl shadow-lg p-6 flex-1 flex flex-col items-center justify-center">
-          <div className="text-lg text-white mb-2">오늘 학습 시간</div>
-          <div className="text-4xl font-extrabold text-white">{todayStudyTime ?? '0초'}</div>
-        </div>
-        <div className="bg-[#18181b] rounded-2xl shadow-lg p-6 flex-1 flex flex-col items-center justify-center">
-          <div className="font-bold text-2xl text-white">랭킹</div>
         </div>
       </div>
 
