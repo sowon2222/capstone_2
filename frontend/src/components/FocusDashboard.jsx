@@ -29,11 +29,17 @@ ChartJS.register(
   Legend
 );
 
+function getTodayStr() {
+  const today = new Date();
+  return today.toISOString().slice(0, 10);
+}
+
 function FocusDashboard() {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:8000/report/focus-analysis?user_id=1&period_start=2024-06-01&period_end=2024-06-30')
+    const today = getTodayStr();
+    fetch(`http://localhost:8000/report/focus-analysis?user_id=1&period_start=${today}&period_end=${today}`)
       .then(res => res.json())
       .then(setData);
   }, []);
@@ -102,8 +108,11 @@ function FocusDashboard() {
     }
   };
 
-  // 예시: data.focus_sessions가 [{start_time, end_time, is_interrupted}, ...] 형태라고 가정
-  const timelineData = makeTimelineData(data.focus_sessions || []);
+  // 오늘 날짜의 세션만 필터링
+  const today = getTodayStr();
+  const todaySessions = (data?.focus_sessions || []).filter(
+    s => s.start_time.slice(0, 10) === today
+  );
 
   return (
     <div className="max-w-2xl mx-auto p-8">
@@ -157,7 +166,7 @@ function FocusDashboard() {
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <h3 className="font-semibold mb-2 mt-8 text-center">집중/중단 세션 타임라인</h3>
-            <BlockTimeline sessions={data.focus_sessions || []} />
+            <BlockTimeline sessions={todaySessions} />
             <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ width: 16, height: 16, background: '#60a5fa', borderRadius: 4, display: 'inline-block' }} />

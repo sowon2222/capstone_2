@@ -1,5 +1,29 @@
 import React, { useEffect, useState } from 'react';
 
+// 문제 텍스트 파싱 유틸
+function getQuestionText(content) {
+  if (!content) return '';
+  if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content);
+      return parsed.question || parsed.content || content;
+    } catch {
+      return content;
+    }
+  }
+  if (typeof content === 'object') {
+    return content.question || content.content || '';
+  }
+  return '';
+}
+
+// 슬라이드 요약/전체요약 프리픽스 제거 유틸
+function getFilteredSummary(summary) {
+  if (!summary) return '';
+  // 모든 줄에서 '슬라이드 전체요약 :' 또는 '슬라이드 요약 :' 패턴 제거
+  return summary.replace(/^슬라이드( 전체)?요약 *: */gm, '').trim();
+}
+
 function ReviewCurationCard() {
   const [cards, setCards] = useState([]);
   const [answer, setAnswer] = useState('');
@@ -96,7 +120,7 @@ function ReviewCurationCard() {
           <b>키워드:</b> {card.keyword_name}
         </div>
         <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>
-          Q. {card.content}
+          Q. {getQuestionText(card.content)}
         </div>
         <form onSubmit={handleSubmit} style={{ marginBottom: 8, display: 'flex', alignItems: 'center' }}>
           <input
@@ -109,7 +133,8 @@ function ReviewCurationCard() {
               border: '1px solid #bbb',
               borderRadius: 4,
               width: '50%',
-              marginRight: 8
+              marginRight: 8,
+              color: '#000'
             }}
             disabled={showSolution}
           />
@@ -142,20 +167,12 @@ function ReviewCurationCard() {
             </span>
           )}
         </form>
-        {/* 실제 정답 표시 */}
-        {showSolution && card.answer !== undefined && (
-          <>
-            <div style={{ color: '#2563eb', marginBottom: 4, fontWeight: 'bold' }}>
-              정답: {String(card.answer)}
-            </div>
-          </>
+        {/* 해설: 정답 제출 후에만 summary(프리픽스 제거) 노출 */}
+        {showSolution && (
+          <div style={{ color: '#fff', marginBottom: 4 }}>
+            <b>해설:</b> {getFilteredSummary(card.summary) || '해설이 없습니다.'}
+          </div>
         )}
-        <div style={{ color: '#fff', marginBottom: 4 }}>
-          <b>해설:</b> {showSolution ? (card.summary || '해설이 없습니다.') : '정답을 입력하면 해설이 공개됩니다.'}
-        </div>
-        <div style={{ fontSize: 12, color: '#b9fbc0', marginTop: 8 }}>
-          슬라이드 요약: {card.summary}
-        </div>
       </div>
     </div>
   );

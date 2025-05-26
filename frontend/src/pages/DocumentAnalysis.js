@@ -397,6 +397,11 @@ const DocumentAnalysis = () => {
     };
   }, [sessionTimer, sessionId]);
 
+  function toKstMysqlDatetime(date = new Date()) {
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
   if (mode === 'list') {
     return (
       <div className="min-h-screen bg-[#18181b]">
@@ -638,6 +643,38 @@ const DocumentAnalysis = () => {
               )}
             </div>
           </div>
+          {mode === 'analysis' && (
+            <div style={{ position: 'fixed', right: 40, bottom: 40, zIndex: 100 }}>
+              <button
+                onClick={async () => {
+                  await saveStudyTime();
+                  const token = localStorage.getItem('token');
+                  const payload = parseJwt(token);
+                  const user_id = payload?.user_id;
+                  const end_time = toKstMysqlDatetime(new Date());
+                  const start_time = analysisStartTime.current
+                    ? toKstMysqlDatetime(new Date(analysisStartTime.current))
+                    : end_time;
+                  await saveFocusSession({
+                    user_id,
+                    start_time,
+                    end_time,
+                    duration: sessionTimer
+                  });
+                  // 강의자료 정보 찾아서 넘기기
+                  const mat = archives.find(a => a.material_id === materialId);
+                  if (mat) {
+                    navigate('/problem-solving', { state: { mat } });
+                  } else {
+                    navigate('/problem-solving', { state: { materialId } });
+                  }
+                }}
+                className="px-8 py-3 bg-[#22c55e] text-white rounded-xl font-bold text-lg shadow-lg hover:bg-[#16a34a] transition"
+              >
+                문제풀이 시작
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
