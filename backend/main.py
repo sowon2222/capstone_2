@@ -6,6 +6,7 @@ from gpt_generate import router as gpt_router
 from quiz_api import router as quiz_router
 from report_api import router as report_router
 from fastapi.middleware.cors import CORSMiddleware
+from profile_api import router as profile_router
 
 app = FastAPI()
 
@@ -47,6 +48,7 @@ app.include_router(archive_router)
 app.include_router(gpt_router)
 app.include_router(quiz_router)
 app.include_router(report_router)
+app.include_router(profile_router)
 
 # 👇 이 부분 추가!
 app.add_middleware(

@@ -15,6 +15,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { AnalysisProvider } from "./contexts/AnalysisContext";
 import ReportPage from './pages/ReportPage';
 import WrongNotesPage from './pages/WrongNotesPage';
+import Profile from "./pages/Profile";
 
 import FocusDashboard from './components/FocusDashboard';
 import FocusSolveHabit from './components/FocusSolveHabit';
@@ -27,6 +28,7 @@ function App() {
   const [mainTitle, setMainTitle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [userId, setUserId] = useState(null);
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -83,6 +85,7 @@ function App() {
               <Route path="/additional-practice" element={<AdditionalPractice />} />
               <Route path="/report" element={<ReportPage />} />
               <Route path="/wrong-notes" element={<WrongNotesPage />} />
+              <Route path="/profile" element={<Profile userId={localStorage.getItem('user_id')} />} />
             </Route>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />

@@ -36,16 +36,16 @@ export default function LoginPage() {
       const data = await response.json();
       console.log('로그인 응답:', data);
       
-      // API 명세서의 응답 형식에 맞춰 처리
+      // user_id와 토큰을 localStorage에 저장
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user_id', data.user_id);
+
       const userData = {
         id: data.user_id,
         username: data.username,
         token: data.access_token
       };
 
-      // 토큰을 localStorage에 저장
-      localStorage.setItem('token', data.access_token);
-      
       await login(userData);
       navigate("/");
     } catch (error) {
