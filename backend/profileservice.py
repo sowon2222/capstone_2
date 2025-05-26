@@ -63,7 +63,7 @@ def get_weak_keywords(user_id: int, db: Session):
     """)
     result = db.execute(sql, {"user_id": user_id}).fetchall()
     return [
-        {"keyword_name": row[0]} for row in result
+        {"keyword_name": row[0], "wrong_count": row[1]} for row in result
     ] if result else []
 
 # 5. 학습 시간 집계 함수

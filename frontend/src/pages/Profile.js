@@ -111,8 +111,8 @@ function WrongConceptsCard({ concepts }) {
       <ol className="list-decimal ml-5 space-y-1">
         {concepts.map((c, i) => (
           <li key={i} className="flex justify-between">
-            <span>{c.name}</span>
-            <span className="text-[#ffb3b3]">틀린 문제 수 {c.count}개</span>
+            <span>{c.keyword_name}</span>
+            <span className="text-[#ffb3b3]">틀린 문제 수 {c.wrong_count}개</span>
           </li>
         ))}
       </ol>
@@ -335,6 +335,14 @@ const ReportProfile = ({ userId }) => {
     },
   };
 
+  // 유형별 평균 풀이 시간(초) x축 라벨 고정
+  const fixedTypes = ['객관식', '주관식', '참거짓', '빈칸채우기'];
+  const byTypeDataMap = Object.fromEntries(filteredByTypeData.map(d => [d.question_type, d.avg_time]));
+  const fixedByTypeData = fixedTypes.map(type => ({
+    question_type: type,
+    avg_time: byTypeDataMap[type] ?? 0
+  }));
+
   return (
     <div className="max-w-5xl mx-auto mt-12 p-6 bg-[#18181b] rounded-2xl shadow-lg border border-[#23232a] text-[#e6e6e6]">
       <div className="flex justify-between items-center mb-6">
@@ -388,13 +396,15 @@ const ReportProfile = ({ userId }) => {
               ) : (
                 <Bar
                   data={{
-                    labels: filteredByTypeData.map(d => d.question_type),
+                    labels: fixedByTypeData.map(d => d.question_type),
                     datasets: [
                       {
                         label: '평균 풀이 시간(초)',
-                        data: filteredByTypeData.map(d => d.avg_time),
+                        data: fixedByTypeData.map(d => d.avg_time),
                         backgroundColor: '#60a5fa',
                         borderRadius: 8,
+                        barPercentage: 0.4,
+                        categoryPercentage: 0.6,
                       }
                     ]
                   }}
@@ -550,7 +560,7 @@ const ReportProfile = ({ userId }) => {
                       <span className="text-base text-[#e6e6e6] font-medium">{kw.keyword_name}</span>
                     </div>
                     <div className="flex-1 border-dotted border-b-2 border-[#444] mx-3"></div>
-                    <span className="text-[#ff6b6b] font-bold text-base">틀린 문제 수 {kw.count}개</span>
+                    <span className="text-[#ff6b6b] font-bold text-base">틀린 문제 수 {kw.wrong_count}개</span>
                   </li>
                 ))}
               </ol>
