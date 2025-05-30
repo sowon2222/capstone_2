@@ -23,6 +23,7 @@ export default function HomePage() {
   const [showLoginAlert, setShowLoginAlert] = useState(false);
   const [focusSessions, setFocusSessions] = useState([]);
   const [ranking, setRanking] = useState(null);
+  const [feedback, setFeedback] = useState(null);
   
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -153,6 +154,25 @@ export default function HomePage() {
       .catch(err => {
         console.error('랭킹 조회 오류:', err);
         setRanking(null);
+      });
+  }, [token]);
+
+  // 피드백 가져오기
+  useEffect(() => {
+    if (!token) {
+      setFeedback(null);
+      return;
+    }
+    fetch('http://localhost:3000/api/feedback', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setFeedback(data.message);
+      })
+      .catch(err => {
+        console.error('피드백 조회 오류:', err);
+        setFeedback(null);
       });
   }, [token]);
 
@@ -315,7 +335,13 @@ export default function HomePage() {
 
       {/* 피드백 */}
       <div className="w-full bg-gradient-to-r from-[#346aff] to-[#2d5cd9] rounded-xl p-6 text-white text-lg font-semibold shadow text-center mt-8">
-        📈 오답률이 높은 자료는 TCP/IP 영역 입니다. "이런 부분을 더 공부하세요!"
+        {!token ? (
+          "로그인 후 이용 가능합니다"
+        ) : feedback ? (
+          feedback
+        ) : (
+          "피드백을 불러오는 중..."
+        )}
       </div>
     </main>
   );

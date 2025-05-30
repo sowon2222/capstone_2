@@ -655,6 +655,18 @@ app.get('/api/ranking', authenticateToken, async (req, res) => {
 app.get('/api/feedback', authenticateToken, async (req, res) => {
     const userId = req.user.user_id;
     try {
+        // 먼저 문제를 풀었는지 확인
+        const [hasAttempts] = await pool.query(
+            'SELECT COUNT(*) as count FROM question_attempts WHERE user_id = ?',
+            [userId]
+        );
+        
+        if (Number(hasAttempts.count) === 0) {
+            return res.json({
+                message: "🎯 아직 풀어본 문제가 없네요! 문제를 풀어보고 피드백을 받아보세요!"
+            });
+        }
+
         // 가장 오답률이 높은 키워드 조회
         const [weakKeyword] = await pool.query(
             `SELECT k.keyword_name, COUNT(*) as incorrect_count

@@ -98,7 +98,7 @@ function ProgressCard({ percent, solved, total }) {
       <div className="w-full h-2 bg-[#18181b] rounded mb-2">
         <div className="h-2 bg-[#8abfff] rounded" style={{ width: `${percent}%` }}></div>
       </div>
-      <div className="text-sm text-[#bbbbbb]">{solved}문제 / {total}문제</div>
+     
       <div className="mt-2 text-[#b3e283] font-semibold">오답 {percent}% 해결했어요!</div>
     </div>
   );
@@ -438,9 +438,9 @@ const ReportProfile = ({ userId }) => {
                 style={{ width: `${percent}%` }}
               ></div>
             </div>
-            <div className="text-lg font-bold text-[#8abfff] mt-2">
+            {/* <div className="text-lg font-bold text-[#8abfff] mt-2">
               {correctProblems}문제 / {totalProblems}문제
-            </div>
+            </div> */}
             <div className="text-sm text-[#bbbbbb] mt-1">
               실제: {actualAccuracy.toFixed(1)}%&nbsp;&nbsp;|&nbsp;&nbsp;목표: {goal.accuracy}%
             </div>

@@ -646,7 +646,7 @@ const DocumentAnalysis = () => {
                 </span>
               </div>
               {/* 페이지별 학습 시간 */}
-              <div className="mb-2 text-xs text-[#bbbbbb]">이 페이지 학습: {Math.floor(currentPageTime/60)}분 {currentPageTime%60}초</div>
+              
               <h2 className="text-lg font-bold mb-2 text-white">분석 결과</h2>
               {isRequestingSummary ? (
                 <div className="flex flex-col items-center justify-center h-40">
