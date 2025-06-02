@@ -28,6 +28,9 @@ export default function ProblemSolving() {
   const [prevTotalDuration, setPrevTotalDuration] = useState(0); // DB에서 불러온 누적값(초)
   const [sessionTimer, setSessionTimer] = useState(0); // 현재 세션에서 측정된 시간(초)
   const sessionTimerInterval = useRef(null);
+  const [weakReviewCount, setWeakReviewCount] = useState(0); // 0~3
+  const [isWeakReview, setIsWeakReview] = useState(false);
+  const [showWeakReviewButton, setShowWeakReviewButton] = useState(false);
 
   const token = localStorage.getItem('token');
 
@@ -50,69 +53,24 @@ export default function ProblemSolving() {
 
   useEffect(() => {
     if (!slides.length) return;
-    // 여러 슬라이드에 대해 문제를 한 번에 생성해서 배열로 관리
-    const generateProblemsForSlides = async () => {
-      setProblemsLoading(true);
-      setLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        // 여러 슬라이드의 slide_id를 한 번에 보냄
-        const slideIds = slides.map(s => s.slide_id);
-        const bulkRes = await fetch('http://localhost:8000/quiz/generate-bulk', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ slide_ids: slideIds })
-        });
-        if (!bulkRes.ok) {
-          alert('문제 생성에 실패했습니다.');
-          setCurrentView('list');
-          setProblemsLoading(false);
-          setLoading(false);
-          return;
-        }
-        let gen = await bulkRes.json();
-        // 배열로 가공
-        const processedQuestions = gen.map(generatedQuestion => {
-          let processedQuestion = {
-            id: generatedQuestion.question_id,
-            content: generatedQuestion.content,
-            explanation: generatedQuestion.explanation,
-            difficulty: generatedQuestion.difficulty,
-            tags: generatedQuestion.tags || [],
-            type: generatedQuestion.type
-          };
-          if (generatedQuestion.type === '객관식') {
-            processedQuestion.options = Array.isArray(generatedQuestion.options)
-              ? generatedQuestion.options
-              : Object.values(generatedQuestion.options);
-            processedQuestion.correct = typeof generatedQuestion.correct === 'number'
-              ? generatedQuestion.correct
-              : Object.keys(generatedQuestion.options).indexOf(generatedQuestion.correct);
-          } else if (generatedQuestion.type === '주관식') {
-            processedQuestion.options = ['정답 입력'];
-            processedQuestion.correct = generatedQuestion.correct;
-          } else if (generatedQuestion.type === '참/거짓') {
-            processedQuestion.options = ['참', '거짓'];
-            processedQuestion.correct = generatedQuestion.correct === '참' ? 0 : 1;
-          }
-          return processedQuestion;
-        });
-        setProblems(processedQuestions);
-        setCurrentSlideIdx(0);
-      } catch (error) {
-        console.error('Error generating problems:', error);
-        alert('문제 생성 중 오류가 발생했습니다.');
-      } finally {
-        setLoading(false);
-        setProblemsLoading(false);
-      }
-    };
-    generateProblemsForSlides();
-    // eslint-disable-next-line
+    // 첫 슬라이드 문제 생성
+    generateProblemForSlide(slides[0]);
   }, [slides]);
+
+  useEffect(() => {
+    if (slides.length > 0 && slides[currentSlideIdx]) {
+      generateProblemForSlide(slides[currentSlideIdx]);
+      setAnswers({});
+      setShowExplanation({});
+    }
+    // eslint-disable-next-line
+  }, [currentSlideIdx]);
+
+  useEffect(() => {
+    if (problems.length > 0) {
+      setCurrentSlideIdx(0);
+    }
+  }, [problems]);
 
   useEffect(() => {
     if (selectedDocument?.material_id) {
@@ -162,6 +120,107 @@ export default function ProblemSolving() {
     };
   }, [sessionTimer, sessionId]);
 
+  useEffect(() => {
+    if (showResult && Array.isArray(showResult)) {
+      const correctCount = showResult.filter(a => a.is_correct).length;
+      const totalCount = showResult.length;
+      setShowWeakReviewButton(!isWeakReview && correctCount < totalCount && weakReviewCount < 3);
+    }
+  }, [showResult, isWeakReview, weakReviewCount]);
+
+  useEffect(() => {
+    if (showResult && isWeakReview) {
+      setIsWeakReview(false);
+    }
+  }, [showResult, isWeakReview]);
+
+  const generateProblemForSlide = async (slide) => {
+    setProblemsLoading(true);
+    setLoading(true);
+    console.log('[generateProblemForSlide] slide:', slide);
+    try {
+      // 1. 키워드 불러오기
+      const token = localStorage.getItem('token');
+      const keywordRes = await fetch(`http://localhost:3000/slides/${slide.slide_id}/keywords`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const keywordData = await keywordRes.json();
+      console.log('[keywords] response:', keywordData);
+      const keywordId = keywordData[0]?.keyword_id;
+      
+      // 2. 문제 생성
+      const body = {
+        slide_id: slide.slide_id,
+        keyword_id: keywordId,
+        slide_title: slide.slide_title,
+        concept_explanation: slide.concept_explanation,
+        image_description: slide.image_description || null,
+        keywords: slide.main_keywords ? slide.main_keywords.split(',') : [],
+        important_sentences: slide.important_sentences ? slide.important_sentences.split('\n') : [],
+        slide_summary: slide.summary
+      };
+      console.log('[quiz/generate] request body:', body);
+
+      const generateRes = await fetch('http://localhost:8000/quiz/generate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!generateRes.ok) {
+        const errText = await generateRes.text();
+        console.error('[quiz/generate] error response:', errText);
+        throw new Error('문제 생성에 실패했습니다.');
+      }
+
+      let gen = await generateRes.json();
+      // 1. 배열인지 단일 객체인지 검사
+      const questionsArray = Array.isArray(gen) ? gen : [gen];
+      // 2. 문제별로 가공
+      const processedQuestions = questionsArray.map(generatedQuestion => {
+        let processedQuestion = {
+          id: generatedQuestion.question_id,
+          content: generatedQuestion.content,
+          explanation: generatedQuestion.explanation,
+          difficulty: generatedQuestion.difficulty,
+          tags: generatedQuestion.tags || [],
+          type: generatedQuestion.type
+        };
+        if (generatedQuestion.type === '객관식') {
+          if (Array.isArray(generatedQuestion.options)) {
+            processedQuestion.options = generatedQuestion.options;
+          } else if (generatedQuestion.options && typeof generatedQuestion.options === 'object') {
+            processedQuestion.options = Object.values(generatedQuestion.options);
+          } else {
+            processedQuestion.options = []; // 또는 ['옵션 없음'] 등 기본값
+          }
+          processedQuestion.correct = typeof generatedQuestion.correct === 'number'
+            ? generatedQuestion.correct
+            : (generatedQuestion.options && typeof generatedQuestion.options === 'object')
+              ? Object.keys(generatedQuestion.options).indexOf(generatedQuestion.correct)
+              : -1;
+        } else if (generatedQuestion.type === '주관식') {
+          processedQuestion.options = ['정답 입력'];
+          processedQuestion.correct = generatedQuestion.correct;
+        } else if (generatedQuestion.type === '참/거짓' || generatedQuestion.type === '참거짓') {
+          processedQuestion.options = ['참', '거짓'];
+          processedQuestion.correct = generatedQuestion.correct === '참' ? 0 : 1;
+        }
+        return processedQuestion;
+      });
+      setProblems(processedQuestions);
+    } catch (error) {
+      console.error('Error generating problem:', error);
+      alert('문제 생성 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+      setProblemsLoading(false);
+    }
+  };
+
   // 문제 번호 클릭
   const handleNumberClick = (idx) => setCurrentSlideIdx(idx);
 
@@ -193,30 +252,28 @@ export default function ProblemSolving() {
     setShowConfirm(false);
     // 마지막 문제면 결과, 아니면 다음 문제로 이동
     if (currentSlideIdx === problems.length - 1) {
-      // 모든 문제를 서버에 저장
+      // 마지막 문제 제출
       const token = localStorage.getItem('token');
       const payload = parseJwt(token);
       const userId = payload?.user_id;
-      for (let idx = 0; idx < problems.length; idx++) {
-        const problem = problems[idx];
-        const userAnswer = answers[idx];
-        let answerValue = userAnswer;
-        if (problem.options && typeof problem.correct === 'number') {
-          answerValue = problem.options[userAnswer];
-        }
-        await fetch('http://localhost:8000/quiz/submit', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            question_id: problem.question_id || problem.id,
-            user_answer: answerValue
-          })
-        });
+      const problem = problems[currentSlideIdx];
+      const userAnswer = answers[currentSlideIdx];
+      let answerValue = userAnswer;
+      if (problem.options && typeof problem.correct === 'number') {
+        answerValue = problem.options[userAnswer];
       }
+      await fetch('http://localhost:8000/quiz/submit', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          question_id: problem.question_id || problem.id,
+          user_answer: answerValue
+        })
+      });
       // 모든 문제 결과를 showResult에 세팅
       const allResults = problems.map((p, idx) => {
         const userAns = answers[idx];
@@ -224,12 +281,32 @@ export default function ProblemSolving() {
         if (p.options && typeof p.correct === 'number') {
           userAnsValue = p.options[userAns];
         }
+        let correctAnswer;
+        if (p.type === '객관식' && p.options && typeof p.correct === 'number') {
+          correctAnswer = p.options[p.correct];
+        } else if (p.type === '주관식') {
+          correctAnswer = p.correct;
+        } else if (p.type === '참/거짓' || p.type === '참거짓') {
+          correctAnswer = p.correct === 0 ? '참' : '거짓';
+        } else {
+          correctAnswer = p.correct;
+        }
+
+        let isCorrect;
+        if (p.type === '객관식' || p.type === '참/거짓' || p.type === '참거짓') {
+          isCorrect = userAns === p.correct;
+        } else if (p.type === '주관식') {
+          isCorrect = userAns !== undefined && String(userAns).trim() !== '' && String(userAns).trim() === String(p.correct).trim();
+        } else {
+          isCorrect = false;
+        }
+
         return {
           question_id: p.id || p.question_id,
           question: p.content,
-          correct_answer: p.options && typeof p.correct === 'number' ? p.options[p.correct] : p.correct,
+          correct_answer: correctAnswer,
           user_answer: userAnsValue,
-          is_correct: userAns === p.correct,
+          is_correct: isCorrect,
           explanation: p.explanation
         };
       });
@@ -313,7 +390,14 @@ export default function ProblemSolving() {
   const progress = problems.length > 0 ? Math.round(((currentSlideIdx + 1) / problems.length) * 100) : 0;
 
   // 점수 계산
-  const correctCount = problems.filter((p, idx) => answers[idx] === p.correct).length;
+  const correctCount = problems.filter((p, idx) => {
+    if (p.type === '객관식' || p.type === '참/거짓') {
+      return answers[idx] !== undefined && answers[idx] === p.correct;
+    } else if (p.type === '주관식') {
+      return answers[idx] !== undefined && String(answers[idx]).trim() === String(p.correct).trim();
+    }
+    return false;
+  }).length;
   const totalCount = problems.length;
   const score = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
 
@@ -330,56 +414,28 @@ export default function ProblemSolving() {
       headers: { Authorization: `Bearer ${token}` }
     }).then(res => res.json());
 
-    // 2) 만약 DB에 문제 없으면 슬라이드 요약 가져와서 랜덤 10개 슬라이드로 bulk 생성
+    // 2) 만약 DB에 문제 없으면 전체 내용에서 10개 문제 생성
     if (!Array.isArray(questions) || questions.length === 0) {
-      const slidesRes = await fetch(`http://localhost:3000/archive/${mat.material_id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const { slides: allSlides } = await slidesRes.json();
-
-      // 유효한 슬라이드만 필터
-      const validSlides = (allSlides || []).filter(s =>
-        s.slide_number != null &&
-        s.summary?.trim() &&
-        s.slide_title?.trim()
-      );
-
-      // 최대 10개 랜덤 추출
-      const pick = validSlides.length > 10
-        ? validSlides.sort(() => 0.5 - Math.random()).slice(0, 10)
-        : validSlides;
-
-      const slideIds = pick.map(s => s.slide_id);
-      if (slideIds.length === 0) {
-        alert('문제 생성에 사용할 슬라이드가 없습니다.');
-        setCurrentView('list');
-        setProblemsLoading(false);
-        return;
-      }
-
-      // bulk 생성
-      const bulkRes = await fetch('http://localhost:8000/quiz/generate-bulk', {
+      const generateRes = await fetch('http://localhost:8000/quiz/generate', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          material_id: mat.material_id,
-          slide_ids: slideIds
+          material_id: mat.material_id
         })
       });
-      if (!bulkRes.ok) {
+
+      if (!generateRes.ok) {
         alert('문제 생성에 실패했습니다.');
         setCurrentView('list');
         setProblemsLoading(false);
         return;
       }
 
-      // bulk 생성 직후 다시 DB에서 가져오기
-      questions = await fetch(`http://localhost:8000/quiz/material-questions?material_id=${mat.material_id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(res => res.json());
+      // 생성된 문제 가져오기
+      questions = await generateRes.json();
     }
 
     // 3) questions 처리해서 state에 세팅
@@ -391,30 +447,45 @@ export default function ProblemSolving() {
     }
 
     const processed = questions.map(q => {
-      const pq = {
+      let pq = {
         id: q.question_id,
-        content: q.content,
         explanation: q.explanation,
         difficulty: q.difficulty,
         tags: q.tags || [],
         type: q.type,
       };
+
       if (q.type === '객관식') {
-        pq.options = Array.isArray(q.options) ? q.options : Object.values(q.options);
-        pq.correct = typeof q.correct === 'number'
-          ? q.correct
-          : Object.keys(q.options).indexOf(q.correct);
-      }
-      else if (q.type === '주관식') {
+        // content가 undefined/null이거나, options/question이 없으면 빈 문제로 처리
+        if (!q.content || !Array.isArray(q.options) || !q.content) {
+          pq.content = '';
+          pq.options = [];
+          pq.correct = -1;
+        } else {
+          pq.content = q.content;
+          pq.options = q.options;
+          pq.correct = typeof q.correct === 'number' ? q.correct : -1;
+        }
+      } else if (q.type === '주관식') {
+        pq.content = q.content;
         pq.options = ['정답 입력'];
-        pq.correct = q.correct;
-      }
-      else if (q.type === '참/거짓') {
+        pq.correct = q.answer;
+      } else if (q.type === '참/거짓' || q.type === '참거짓') {
+        pq.content = q.content;
         pq.options = ['참', '거짓'];
-        pq.correct = q.correct === '참' ? 0 : 1;
+        pq.correct = q.answer === '참' ? 0 : 1;
+      } else {
+        pq.content = q.content;
+        pq.options = [];
+        pq.correct = -1;
       }
       return pq;
     });
+
+    if (processed.length === 0) {
+      alert('보충학습 문제를 생성할 수 없습니다.');
+      return;
+    }
 
     setProblems(processed);
     setProblemsLoading(false);
@@ -453,6 +524,154 @@ export default function ProblemSolving() {
   const totalSeconds = prevTotalDuration + sessionTimer;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
+
+  const handleStartWeakReview = () => {
+    setIsWeakReview(true);
+    handleWeakReview();
+  };
+
+  const handleWeakReview = async () => {
+    // 1. 오답 문제의 키워드 추출
+    const wrongProblems = showResult.filter(a => !a.is_correct);
+    let weakKeywords = [];
+    wrongProblems.forEach(p => {
+      if (Array.isArray(p.tags)) {
+        weakKeywords.push(...p.tags);
+      }
+    });
+    weakKeywords = [...new Set(weakKeywords)].filter(Boolean);
+
+    // 2. 이미 출제된 문제 ID 모으기
+    let excludeIds = [];
+    if (problems && Array.isArray(problems)) {
+      excludeIds = excludeIds.concat(problems.map(p => p.id || p.question_id));
+    }
+    if (window.weakReviewHistory && Array.isArray(window.weakReviewHistory)) {
+      excludeIds = excludeIds.concat(window.weakReviewHistory.flat());
+    }
+    window.weakReviewHistory = window.weakReviewHistory || [];
+    window.weakReviewHistory.push(problems.map(p => p.id || p.question_id));
+
+    // 3. 현재 학습 중인 PDF/슬라이드 ID
+    const materialId = selectedDocument?.material_id;
+
+    // 4. 백엔드에 요청
+    const token = localStorage.getItem('token');
+    const payload = parseJwt(token);
+    const userId = payload?.user_id;
+
+    try {
+      const res = await fetch('http://localhost:8000/quiz/weak-generate-by-keywords', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          keywords: weakKeywords,
+          top_n: 10,
+          exclude_question_ids: excludeIds.filter(Boolean),
+          material_id: materialId
+        })
+      });
+      
+      if (!res.ok) {
+        throw new Error('보충학습 문제 생성에 실패했습니다.');
+      }
+
+      const newQuestions = await res.json();
+      
+      if (!Array.isArray(newQuestions)) {
+        console.error('Invalid response format:', newQuestions);
+        alert('보충학습 문제 생성에 실패했습니다.');
+        return;
+      }
+
+      // 3. 문제 데이터 가공 후 setProblems로 세팅, 문제풀이 화면으로 이동
+      const processed = newQuestions.map(q => {
+        let content = q.content;
+        let options = q.options;
+        let correct = q.correct;
+        let correct_answer = q.correct_answer;
+        let difficulty = q.difficulty;
+
+        // content가 JSON 문자열이면 파싱
+        if (typeof content === 'string') {
+          try {
+            const parsed = JSON.parse(content);
+            content = parsed.question || content;
+            options = parsed.options
+              ? Array.isArray(parsed.options)
+                ? parsed.options
+                : Object.values(parsed.options)
+              : [];
+            correct_answer = parsed.correct_answer || correct_answer;
+            correct = typeof parsed.correct === 'number'
+              ? parsed.correct
+              : (parsed.options && typeof parsed.options === 'object' && parsed.correct_answer)
+                ? Object.keys(parsed.options).indexOf(parsed.correct_answer)
+                : -1;
+            difficulty = parsed.difficulty || difficulty;
+          } catch {
+            // 파싱 실패 시 원본 사용
+            options = [];
+          }
+        } else if (options && typeof options === 'object' && !Array.isArray(options)) {
+          options = Object.values(options);
+        }
+
+        let pq = {
+          id: q.question_id,
+          explanation: q.explanation,
+          difficulty: difficulty || '', // 반드시 세팅
+          tags: q.tags || [],
+          type: q.type,
+          content: content || q.question,
+          options: options || [],
+        };
+
+        if (q.type === '객관식') {
+          pq.correct = typeof correct === 'number'
+            ? correct
+            : (options && correct_answer)
+              ? options.findIndex(opt => opt === correct_answer)
+              : -1;
+        } else if (q.type === '주관식') {
+          pq.options = ['정답 입력'];
+          pq.correct = q.answer || correct_answer;
+        } else if (q.type === '참/거짓' || q.type === '참거짓') {
+          pq.options = ['참', '거짓'];
+          pq.correct = (q.answer || correct_answer) === '참' ? 0 : 1;
+        } else {
+          pq.options = [];
+          pq.correct = -1;
+        }
+        return pq;
+      });
+
+      if (processed.length === 0) {
+        alert('보충학습 문제를 생성할 수 없습니다.');
+        return;
+      }
+
+      setProblems(processed);
+      setAnswers({});
+      setShowResult(false);
+      setCurrentSlideIdx(0);
+      setCurrentView('problem');
+      setWeakReviewCount(prev => prev + 1);
+    } catch (error) {
+      console.error('Error in handleWeakReview:', error);
+      alert('보충학습 문제 생성 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleEndWeakReview = () => {
+    setIsWeakReview(false);
+    setShowWeakReviewButton(false);
+    setCurrentView('list');
+  };
 
   // 본 문제풀이 ... 결과 화면(showResult) ...점수, 정답/오답 해설, 오답 노트 보기, 보충학습 하기 포함함
   if (!token) {
@@ -534,7 +753,7 @@ export default function ProblemSolving() {
     const totalCount = showResult.length;
     const score = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
     return (
-      <div className="min-h-screen bg-[#18181B]">
+      <div className="min-h-screen bg-[#18181B] flex flex-col items-center py-16">
         <HeaderBar />
         <div className="flex flex-col items-center py-16">
           {/* 점수 */}
@@ -553,8 +772,8 @@ export default function ProblemSolving() {
                 <div className="mb-2 text-white font-semibold">{a.question}</div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-white">
-                    정답: {a.correct_answer}
-                    <br />제출한 답: {a.user_answer}
+                    <b>정답:</b> {a.correct_answer}
+                    <br /><b>제출한 답:</b> {a.user_answer}
                   </span>
                   <span className={`px-3 py-1 rounded-full text-sm font-semibold
                     ${a.is_correct ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}
@@ -577,6 +796,25 @@ export default function ProblemSolving() {
               aria-label="돌아가기"
             >
               X
+            </button>
+          </div>
+          {/* 하단 버튼 영역 */}
+          <div className="flex flex-col items-center gap-4 mt-12">
+            {/* 보충학습하기 버튼: showWeakReviewButton 상태에 따라 노출 */}
+            {showWeakReviewButton && (
+              <button
+                className="px-8 py-3 bg-[#346aff] text-white rounded-lg font-bold hover:bg-[#2554b0] transition text-lg"
+                onClick={handleStartWeakReview}
+              >
+                보충학습 {weakReviewCount + 1}회차 시작
+              </button>
+            )}
+            {/* 보충학습 그만하기 버튼: 항상 노출 */}
+            <button
+              className="px-8 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition text-lg"
+              onClick={handleEndWeakReview}
+            >
+              보충학습 그만하기
             </button>
           </div>
         </div>
@@ -610,9 +848,16 @@ export default function ProblemSolving() {
       {/* 문제 카드 + 네비게이션 */}
       <div className="flex flex-row gap-8 w-full max-w-4xl mx-auto">
         <div className="w-16" />
-        <div className="flex-1 bg-[#232329] rounded-3xl shadow-2xl p-10 flex flex-col relative min-h-[400px]">
+        <div className="flex-1 rounded-3xl shadow-2xl p-10 flex flex-col relative min-h-[400px] bg-[#232329]">
           <div className="absolute top-4 right-8 text-lg text-[#bbbbbb] font-semibold">
             {currentSlideIdx + 1} / {problems.length} 문제
+          </div>
+          {/* 문제 내부, 상단에 추가 */}
+          <div className="flex items-center mb-6">
+            <span className={`px-6 py-2 rounded-2xl font-bold text-base shadow-lg tracking-wide
+              ${isWeakReview ? 'bg-blue-500 text-white' : 'bg-green-500 text-white'}`}>
+              {isWeakReview ? `보충학습 ${weakReviewCount}회차` : '문제풀이'}
+            </span>
           </div>
           {/* 문제 내용 */}
           <div className="text-2xl font-bold text-white mb-8 break-words whitespace-pre-line">
@@ -628,7 +873,7 @@ export default function ProblemSolving() {
           <div className="flex flex-col gap-6">
             {(() => {
               if (!currentProblem) return null;
-              if (currentProblem.options && typeof currentProblem.correct === 'number') {
+              if (Array.isArray(currentProblem.options) && typeof currentProblem.correct === 'number') {
                 // 객관식
                 return currentProblem.options.map((opt, oidx) => (
                   <label key={oidx} className={`flex items-center gap-4 bg-[#2a2a32] rounded-lg px-4 py-5 cursor-pointer text-lg font-medium transition-all duration-150
@@ -655,7 +900,7 @@ export default function ProblemSolving() {
                     onChange={e => setAnswers(prev => ({ ...prev, [currentSlideIdx]: e.target.value }))}
                   />
                 );
-              } else if (currentProblem.type === '참/거짓') {
+              } else if (currentProblem.type === '참/거짓' || currentProblem.type === '참거짓') {
                 // 참/거짓
                 return (
                   <div className="flex gap-4">
