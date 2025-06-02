@@ -1,5 +1,6 @@
 from database import Base, get_db, engine
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, TIMESTAMP, text, Float, Date, Enum
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, TIMESTAMP, text, Float, Date, Enum, BigInteger
+from sqlalchemy.ext.declarative import declarative_base
 
 class User(Base):
     __tablename__ = "users"
@@ -36,13 +37,6 @@ class QuestionAttempt(Base):
     is_correct = Column(Boolean, nullable=False)
     answer = Column(Text)
     attempt_date = Column(Date, nullable=False, server_default=text("CURDATE()"))
-
-# class WeakKeyword(Base):
-#     __tablename__ = "weak_keywords"
-#     weak_id = Column(Integer, primary_key=True, index=True)
-#     user_id = Column(Integer, ForeignKey("users.user_id"))
-#     keyword_id = Column(Integer, ForeignKey("keywords.keyword_id"))
-#     incorrect_count = Column(Integer, default=1)
 
 class WeakKeywordLog(Base):
     __tablename__ = "weak_keyword_logs"
@@ -111,3 +105,13 @@ class StudyIntensityLog(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     study_date = Column(Date, nullable=False)
     intensity_score = Column(Float, default=0)
+
+class WeakReviewHistory(Base):
+    __tablename__ = "weak_review_history"
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False)
+    review_round = Column(Integer, nullable=False)
+    question_id = Column(BigInteger, nullable=False)
+    user_answer = Column(Text)
+    is_correct = Column(Boolean)
+    created_at = Column(TIMESTAMP, nullable=True, server_default=text("CURRENT_TIMESTAMP"))
