@@ -257,67 +257,77 @@ const ArchiveDetail = ({ archive, onBack }) => {
 
         {activeTab === 'questions' && (
           <div className="space-y-6">
-            {attempts.length > 0 ? attempts.map((attempt) => {
-              const parsed = parseQuestionContent(attempt.question_content || attempt.content || attempt.question);
-              const options = parsed.options;
-              const displayAnswer = getDisplayAnswer(attempt.correct_answer || parsed.correct_answer, options);
-              const displayUserAnswer = getDisplayAnswer(attempt.answer || attempt.user_answer, options);
-              const isCorrect = attempt.is_correct;
-              const slideNum = attempt.slide_number || attempt.slide;
-              return (
-                <div key={`${archive.material_id}-attempt-${attempt.attempt_id}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
-                  <div className="flex items-center gap-3 mb-4">
-                    {slideNum && (
-                      <span className="px-2 py-1 text-xs rounded-full bg-[#23232a] border border-[#346aff] text-[#346aff]">슬라이드 {slideNum}에서 출제</span>
-                    )}
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      parsed.type === '객관식' ? 'bg-blue-900/80 text-blue-300' :
-                      parsed.type === '주관식' ? 'bg-purple-900/80 text-purple-300' :
-                      parsed.type === '참/거짓' ? 'bg-green-900/80 text-green-300' :
-                      'bg-orange-900/80 text-orange-300'
-                    }`}>
-                      {parsed.type || '문제'}
-                    </span>
-                    {parsed.difficulty && (
-                      <span className="text-sm text-[#bbbbbb]">난이도: {parsed.difficulty}</span>
-                    )}
-                    <span className={`px-2 py-1 text-xs rounded-full ${isCorrect ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>{isCorrect ? '정답' : '오답'}</span>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">문제</h4>
-                      <p className="text-white whitespace-pre-wrap">{parsed.question || ''}</p>
-                      {options && typeof options === 'object' && !Array.isArray(options) && (
+            {(() => {
+              // question_id 기준으로 중복 제거(가장 최근 기록만 남김)
+              const uniqueAttemptsMap = new Map();
+              for (const attempt of attempts) {
+                if (!uniqueAttemptsMap.has(attempt.question_id)) {
+                  uniqueAttemptsMap.set(attempt.question_id, attempt);
+                }
+              }
+              const uniqueAttempts = Array.from(uniqueAttemptsMap.values());
+              return uniqueAttempts.length > 0 ? uniqueAttempts.map((attempt) => {
+                const parsed = parseQuestionContent(attempt.question_content || attempt.content || attempt.question);
+                const options = parsed.options;
+                const displayAnswer = getDisplayAnswer(attempt.correct_answer || parsed.correct_answer, options);
+                const displayUserAnswer = getDisplayAnswer(attempt.answer || attempt.user_answer, options);
+                const isCorrect = attempt.is_correct;
+                const slideNum = attempt.slide_number || attempt.slide;
+                return (
+                  <div key={`${archive.material_id}-attempt-${attempt.attempt_id}`} className="bg-[#232329] rounded-2xl p-6 border border-[#3a3a42] mb-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      {slideNum && (
+                        <span className="px-2 py-1 text-xs rounded-full bg-[#23232a] border border-[#346aff] text-[#346aff]">슬라이드 {slideNum}에서 출제</span>
+                      )}
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        parsed.type === '객관식' ? 'bg-blue-900/80 text-blue-300' :
+                        parsed.type === '주관식' ? 'bg-purple-900/80 text-purple-300' :
+                        parsed.type === '참/거짓' ? 'bg-green-900/80 text-green-300' :
+                        'bg-orange-900/80 text-orange-300'
+                      }`}>
+                        {parsed.type || '문제'}
+                      </span>
+                      {parsed.difficulty && (
+                        <span className="text-sm text-[#bbbbbb]">난이도: {parsed.difficulty}</span>
+                      )}
+                      <span className={`px-2 py-1 text-xs rounded-full ${isCorrect ? 'bg-green-900/80 text-green-300' : 'bg-red-900/80 text-red-300'}`}>{isCorrect ? '정답' : '오답'}</span>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">문제</h4>
+                        <p className="text-white whitespace-pre-wrap">{parsed.question || ''}</p>
+                        {options && typeof options === 'object' && !Array.isArray(options) && (
+                          <div>
+                            <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
+                            <ul className="ml-4">
+                              {Object.entries(options).map(([key, value]) => (
+                                <li key={`${archive.material_id}-${attempt.attempt_id}-${key}`} className="text-white">{key}. {value}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">내 답변</h4>
+                        <p className="text-white whitespace-pre-wrap">{displayUserAnswer}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">정답</h4>
+                        <p className="text-white whitespace-pre-wrap">{displayAnswer}</p>
+                      </div>
+                      {attempt.explanation && (
                         <div>
-                          <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">보기</h4>
-                          <ul className="ml-4">
-                            {Object.entries(options).map(([key, value]) => (
-                              <li key={`${archive.material_id}-${attempt.attempt_id}-${key}`} className="text-white">{key}. {value}</li>
-                            ))}
-                          </ul>
+                          <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">해설</h4>
+                          <p className="text-white whitespace-pre-wrap">{attempt.explanation}</p>
                         </div>
                       )}
                     </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">내 답변</h4>
-                      <p className="text-white whitespace-pre-wrap">{displayUserAnswer}</p>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">정답</h4>
-                      <p className="text-white whitespace-pre-wrap">{displayAnswer}</p>
-                    </div>
-                    {attempt.explanation && (
-                      <div>
-                        <h4 className="text-sm font-medium text-[#bbbbbb] mb-2">해설</h4>
-                        <p className="text-white whitespace-pre-wrap">{attempt.explanation}</p>
-                      </div>
-                    )}
                   </div>
-                </div>
+                );
+              }) : (
+                <div className="text-[#bbbbbb]">문제풀이 기록이 없습니다.</div>
               );
-            }) : (
-              <div className="text-[#bbbbbb]">문제풀이 기록이 없습니다.</div>
-            )}
+            })()}
           </div>
         )}
 

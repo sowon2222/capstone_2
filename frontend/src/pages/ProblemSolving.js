@@ -50,24 +50,69 @@ export default function ProblemSolving() {
 
   useEffect(() => {
     if (!slides.length) return;
-    // 첫 슬라이드 문제 생성
-    generateProblemForSlide(slides[0]);
-  }, [slides]);
-
-  useEffect(() => {
-    if (slides.length > 0 && slides[currentSlideIdx]) {
-      generateProblemForSlide(slides[currentSlideIdx]);
-      setAnswers({});
-      setShowExplanation({});
-    }
+    // 여러 슬라이드에 대해 문제를 한 번에 생성해서 배열로 관리
+    const generateProblemsForSlides = async () => {
+      setProblemsLoading(true);
+      setLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        // 여러 슬라이드의 slide_id를 한 번에 보냄
+        const slideIds = slides.map(s => s.slide_id);
+        const bulkRes = await fetch('http://localhost:8000/quiz/generate-bulk', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ slide_ids: slideIds })
+        });
+        if (!bulkRes.ok) {
+          alert('문제 생성에 실패했습니다.');
+          setCurrentView('list');
+          setProblemsLoading(false);
+          setLoading(false);
+          return;
+        }
+        let gen = await bulkRes.json();
+        // 배열로 가공
+        const processedQuestions = gen.map(generatedQuestion => {
+          let processedQuestion = {
+            id: generatedQuestion.question_id,
+            content: generatedQuestion.content,
+            explanation: generatedQuestion.explanation,
+            difficulty: generatedQuestion.difficulty,
+            tags: generatedQuestion.tags || [],
+            type: generatedQuestion.type
+          };
+          if (generatedQuestion.type === '객관식') {
+            processedQuestion.options = Array.isArray(generatedQuestion.options)
+              ? generatedQuestion.options
+              : Object.values(generatedQuestion.options);
+            processedQuestion.correct = typeof generatedQuestion.correct === 'number'
+              ? generatedQuestion.correct
+              : Object.keys(generatedQuestion.options).indexOf(generatedQuestion.correct);
+          } else if (generatedQuestion.type === '주관식') {
+            processedQuestion.options = ['정답 입력'];
+            processedQuestion.correct = generatedQuestion.correct;
+          } else if (generatedQuestion.type === '참/거짓') {
+            processedQuestion.options = ['참', '거짓'];
+            processedQuestion.correct = generatedQuestion.correct === '참' ? 0 : 1;
+          }
+          return processedQuestion;
+        });
+        setProblems(processedQuestions);
+        setCurrentSlideIdx(0);
+      } catch (error) {
+        console.error('Error generating problems:', error);
+        alert('문제 생성 중 오류가 발생했습니다.');
+      } finally {
+        setLoading(false);
+        setProblemsLoading(false);
+      }
+    };
+    generateProblemsForSlides();
     // eslint-disable-next-line
-  }, [currentSlideIdx]);
-
-  useEffect(() => {
-    if (problems.length > 0) {
-      setCurrentSlideIdx(0);
-    }
-  }, [problems]);
+  }, [slides]);
 
   useEffect(() => {
     if (selectedDocument?.material_id) {
@@ -117,87 +162,6 @@ export default function ProblemSolving() {
     };
   }, [sessionTimer, sessionId]);
 
-  const generateProblemForSlide = async (slide) => {
-    setProblemsLoading(true);
-    setLoading(true);
-    console.log('[generateProblemForSlide] slide:', slide);
-    try {
-      // 1. 키워드 불러오기
-      const token = localStorage.getItem('token');
-      const keywordRes = await fetch(`http://localhost:3000/slides/${slide.slide_id}/keywords`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const keywordData = await keywordRes.json();
-      console.log('[keywords] response:', keywordData);
-      const keywordId = keywordData[0]?.keyword_id;
-      
-      // 2. 문제 생성
-      const body = {
-        slide_id: slide.slide_id,
-        keyword_id: keywordId,
-        slide_title: slide.slide_title,
-        concept_explanation: slide.concept_explanation,
-        image_description: slide.image_description || null,
-        keywords: slide.main_keywords ? slide.main_keywords.split(',') : [],
-        important_sentences: slide.important_sentences ? slide.important_sentences.split('\n') : [],
-        slide_summary: slide.summary
-      };
-      console.log('[quiz/generate] request body:', body);
-
-      const generateRes = await fetch('http://localhost:8000/quiz/generate', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      });
-
-      if (!generateRes.ok) {
-        const errText = await generateRes.text();
-        console.error('[quiz/generate] error response:', errText);
-        throw new Error('문제 생성에 실패했습니다.');
-      }
-
-      let gen = await generateRes.json();
-      // 1. 배열인지 단일 객체인지 검사
-      const questionsArray = Array.isArray(gen) ? gen : [gen];
-      // 2. 문제별로 가공
-      const processedQuestions = questionsArray.map(generatedQuestion => {
-        let processedQuestion = {
-          id: generatedQuestion.question_id,
-          content: generatedQuestion.content,
-          explanation: generatedQuestion.explanation,
-          difficulty: generatedQuestion.difficulty,
-          tags: generatedQuestion.tags || [],
-          type: generatedQuestion.type
-        };
-        if (generatedQuestion.type === '객관식') {
-          processedQuestion.options = Array.isArray(generatedQuestion.options)
-            ? generatedQuestion.options
-            : Object.values(generatedQuestion.options);
-          processedQuestion.correct = typeof generatedQuestion.correct === 'number'
-            ? generatedQuestion.correct
-            : Object.keys(generatedQuestion.options).indexOf(generatedQuestion.correct);
-        } else if (generatedQuestion.type === '주관식') {
-          processedQuestion.options = ['정답 입력'];
-          processedQuestion.correct = generatedQuestion.correct;
-        } else if (generatedQuestion.type === '참/거짓') {
-          processedQuestion.options = ['참', '거짓'];
-          processedQuestion.correct = generatedQuestion.correct === '참' ? 0 : 1;
-        }
-        return processedQuestion;
-      });
-      setProblems(processedQuestions);
-    } catch (error) {
-      console.error('Error generating problem:', error);
-      alert('문제 생성 중 오류가 발생했습니다.');
-    } finally {
-      setLoading(false);
-      setProblemsLoading(false);
-    }
-  };
-
   // 문제 번호 클릭
   const handleNumberClick = (idx) => setCurrentSlideIdx(idx);
 
@@ -229,28 +193,30 @@ export default function ProblemSolving() {
     setShowConfirm(false);
     // 마지막 문제면 결과, 아니면 다음 문제로 이동
     if (currentSlideIdx === problems.length - 1) {
-      // 마지막 문제 제출
+      // 모든 문제를 서버에 저장
       const token = localStorage.getItem('token');
       const payload = parseJwt(token);
       const userId = payload?.user_id;
-      const problem = problems[currentSlideIdx];
-      const userAnswer = answers[currentSlideIdx];
-      let answerValue = userAnswer;
-      if (problem.options && typeof problem.correct === 'number') {
-        answerValue = problem.options[userAnswer];
+      for (let idx = 0; idx < problems.length; idx++) {
+        const problem = problems[idx];
+        const userAnswer = answers[idx];
+        let answerValue = userAnswer;
+        if (problem.options && typeof problem.correct === 'number') {
+          answerValue = problem.options[userAnswer];
+        }
+        await fetch('http://localhost:8000/quiz/submit', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            question_id: problem.question_id || problem.id,
+            user_answer: answerValue
+          })
+        });
       }
-      await fetch('http://localhost:8000/quiz/submit', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          question_id: problem.question_id || problem.id,
-          user_answer: answerValue
-        })
-      });
       // 모든 문제 결과를 showResult에 세팅
       const allResults = problems.map((p, idx) => {
         const userAns = answers[idx];
