@@ -338,6 +338,7 @@ export default function ProblemSolving() {
         explanation: q.explanation,
         difficulty: q.difficulty,
         type: q.type,
+        number: q.number,
       };
 
       if (q.type === '객관식') {
