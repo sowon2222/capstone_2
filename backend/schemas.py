@@ -1,44 +1,76 @@
+# from pydantic import BaseModel
+# from typing import Optional, List
+
+# class QuizGenerationRequest(BaseModel):
+#     slide_title: str                # ìŠ¬ë¼ì´ë“œ ì œëª©(ì†Œì£¼ì œ)
+#     concept_explanation: str        # ìŠ¬ë¼ì´ë“œ ê°œë… ì„¤ëª…
+#     image_description: Optional[str] = None  # ì´ë¯¸ì§€ ì„¤ëª… (ì—†ìœ¼ë©´ None)
+#     keywords: List[str]             # ìŠ¬ë¼ì´ë“œ ì£¼ìš” í‚¤ì›Œë“œ
+#     important_sentences: List[str]  # ì¤‘ìš”í•œ ë¬¸ì¥
+#     slide_summary: str              # ê°œë³„ ìŠ¬ë¼ì´ë“œ ì „ì²´ ìš”ì•½
+
+# class QuizOptions(BaseModel):
+#     A: str
+#     B: str
+#     C: str
+#     D: str
+
+# class QuizGenerationRequest(BaseModel):
+#     slide_title: str
+#     concept_explanation: str
+#     image_description: Optional[str] = None
+#     keywords: List[str]
+#     important_sentences: List[str]
+#     slide_summary: str
+#     slide_id: int               # ? í•„ìš”!
+#     keyword_id: int             # ? í•„ìš”!
+
+    
+# class RegisterQuestionRequest(BaseModel):
+#     slide_id: int
+#     keyword_id: int
+#     type: str
+#     question: str
+#     options: Optional[QuizOptions] = None
+#     correct_answer: str
+#     explanation: Optional[str] = None
+    
+# class QuizGenerationResponse(BaseModel):
+#     type: str
+#     question: str
+#     options: Optional[QuizOptions] = None
+#     correct_answer: str
+#     explanation: str
+#     tags: List[str]
+
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import List, Optional
 
 class QuizGenerationRequest(BaseModel):
-    slide_title: str                # ½½¶óÀÌµå Á¦¸ñ(¼ÒÁÖÁ¦)
-    concept_explanation: str        # ½½¶óÀÌµå °³³ä ¼³¸í
-    image_description: Optional[str] = None  # ÀÌ¹ÌÁö ¼³¸í (¾øÀ¸¸é None)
-    keywords: List[str]             # ½½¶óÀÌµå ÁÖ¿ä Å°¿öµå
-    important_sentences: List[str]  # Áß¿äÇÑ ¹®Àå
-    slide_summary: str              # °³º° ½½¶óÀÌµå ÀüÃ¼ ¿ä¾à
-
-class QuizOptions(BaseModel):
-    A: str
-    B: str
-    C: str
-    D: str
-
-class QuizGenerationRequest(BaseModel):
+    slide_id: int
     slide_title: str
     concept_explanation: str
-    image_description: Optional[str] = None
-    keywords: List[str]
     important_sentences: List[str]
     slide_summary: str
-    slide_id: int               # ? ÇÊ¿ä!
-    keyword_id: int             # ? ÇÊ¿ä!
+    force_difficulty: Optional[str] = None
 
-    
-class RegisterQuestionRequest(BaseModel):
-    slide_id: int
-    keyword_id: int
-    type: str
-    question: str
-    options: Optional[QuizOptions] = None
-    correct_answer: str
-    explanation: Optional[str] = None
-    
 class QuizGenerationResponse(BaseModel):
+    question_id: int
+    number: int
     type: str
-    question: str
-    options: Optional[QuizOptions] = None
-    correct_answer: str
-    explanation: str
-    tags: List[str]
+    difficulty: str
+    content: str
+    options: Optional[List[str]] = None
+    correct: Optional[int] = None
+    answer: Optional[str] = None
+    explanation: Optional[str] = None
+
+class RegisterQuestionRequest(BaseModel):
+    question_id: int
+    number: int
+    difficulty: str
+    type: str
+    content: str
+    answer: str
+    explanation: Optional[str] = None
+
