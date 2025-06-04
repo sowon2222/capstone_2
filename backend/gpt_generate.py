@@ -103,7 +103,7 @@ def generate_quiz(
             question = Question(
                 slide_id=slide_id,
                 question_type=q.get("type"),
-                tags=",".join(q.get("tags", [])),
+                #tags=",".join(q.get("tags", [])),
                 content=content_to_save,
                 answer=answer_to_save,
                 explanation=q.get("explanation"),
@@ -342,33 +342,45 @@ def get_material_questions(material_id: int, db: Session = Depends(get_db)):
                 ):
                     continue
                 q_dict["content"] = content_json.get("question")
-                q_dict["options"] = [v for k, v in sorted(content_json["options"].items())]
-                if isinstance(q.answer, str) and q.answer in content_json["options"]:
-                    q_dict["correct"] = list(content_json["options"].keys()).index(q.answer)
-                elif "correct_answer" in content_json and content_json["correct_answer"] in content_json["options"]:
-                    q_dict["correct"] = list(content_json["options"].keys()).index(content_json["correct_answer"])
+                # options를 리스트로 변환
+                if isinstance(content_json["options"], dict):
+                    q_dict["options"] = [v for k, v in sorted(content_json["options"].items())]
+                    option_keys = list(sorted(content_json["options"].keys()))
+                elif isinstance(content_json["options"], list):
+                    q_dict["options"] = content_json["options"]
+                    option_keys = list(range(len(content_json["options"])))
                 else:
-                    continue  # 정답 인덱스도 없으면 건너뜀
-            except Exception:
+                    q_dict["options"] = []
+                    option_keys = []
+                # correct 인덱스 계산
+                correct_answer = content_json.get("correct_answer")
+                if isinstance(q.answer, str) and correct_answer in option_keys:
+                    q_dict["correct"] = option_keys.index(correct_answer)
+                elif isinstance(q.answer, str) and q.answer in option_keys:
+                    q_dict["correct"] = option_keys.index(q.answer)
+                elif correct_answer in content_json["options"]:
+                    # 정답이 value로 들어있는 경우
+                    q_dict["correct"] = q_dict["options"].index(correct_answer)
+                else:
+                    q_dict["correct"] = -1
+            except Exception as e:
+                print("객관식 파싱 에러:", e)
                 continue  # 파싱 실패시 건너뜀
         elif q.question_type == "주관식":
-            # 필수 필드 체크
             if not q.content or not q.answer:
                 continue
             q_dict["content"] = q.content
             q_dict["options"] = ['정답 입력']
             q_dict["correct"] = q.answer
         elif q.question_type == "참거짓":
-            # answer 값의 앞뒤 공백을 제거해서 비교
             answer_clean = q.answer.strip() if q.answer else ""
             if not q.content or not answer_clean or answer_clean not in ["참", "거짓", "true", "false"]:
                 continue
             q_dict["content"] = q.content
             q_dict["options"] = ['참', '거짓']
-            q_dict["correct"] = 0 if answer_clean == "참" else 1
-            print(f"question_id={q.question_id}, answer_clean='{answer_clean}'")
+            q_dict["correct"] = 0 if answer_clean in ["참", "true"] else 1
         else:
-            continue  # 기타 유형은 무시
+            continue
         result.append(q_dict)
     return result
 
@@ -381,33 +393,89 @@ def generate_weak_review(
     material_id: int = Body(...),
     db: Session = Depends(get_db)
 ):
-    # 1. material_id(해당 PDF) 내에서
-    # 2. keywords(오답 개념)와 관련된 문제만
-    # 3. exclude_question_ids에 포함된 문제는 제외
-    keyword_filters = [Question.tags.like(f"%{kw}%") for kw in keywords]
+    slides = db.query(Slide).filter(Slide.material_id == material_id).all()
+    slide_ids = [s.slide_id for s in slides]
     query = db.query(Question).filter(
-        Question.slide_id.in_(
-            db.query(Slide.slide_id).filter(Slide.material_id == material_id)
-        ),
-        or_(*keyword_filters),
+        Question.slide_id.in_(slide_ids),
         ~Question.question_id.in_(exclude_question_ids)
     )
-    # 4. 문제 유형/문장 다양화(랜덤, 유형별 분포 등)
     questions = query.order_by(func.rand()).limit(top_n).all()
 
-    # 5. 부족하면, material_id 내에서 비슷한 개념의 문제로 보충(선택)
-    if len(questions) < top_n:
-        # 오답 키워드로 찾은 문제가 부족하면, material_id 내에서 추가로 보충
-        more = db.query(Question).filter(
-            Question.slide_id.in_(
-                db.query(Slide.slide_id).filter(Slide.material_id == material_id)
-            ),
-            ~Question.question_id.in_([q.question_id for q in questions] + exclude_question_ids)
-        ).order_by(func.rand()).limit(top_n - len(questions)).all()
-        questions += more
+    # 1. 남은 문제가 없으면, exclude를 무시하고 다시 뽑기 (리사이클)
+    if len(questions) == 0:
+        questions = db.query(Question).filter(
+            Question.slide_id.in_(slide_ids)
+        ).order_by(func.rand()).limit(top_n).all()
 
-    # 6. 응답
-    return [q.to_dict() for q in questions]
+    # 2. 그래도 부족하면, GPT로 새 문제 생성
+    if len(questions) == 0:
+        try:
+            generate_quiz(material_id=material_id, db=db)
+            questions = db.query(Question).filter(
+                Question.slide_id.in_(slide_ids)
+            ).order_by(func.rand()).limit(top_n).all()
+        except Exception as e:
+            print("자동 문제 생성 실패:", e)
+            return []
+
+    # 6. 응답: 프론트가 바로 쓸 수 있게 가공
+    result = []
+    for q in questions:
+        q_dict = {
+            "question_id": q.question_id,
+            "slide_id": q.slide_id,
+            "type": q.question_type,
+            "difficulty": q.difficulty,
+            "explanation": q.explanation
+        }
+        if q.question_type == "객관식":
+            try:
+                content_json = json.loads(q.content)
+                if (
+                    "options" not in content_json or not content_json.get("options") or
+                    "question" not in content_json or not content_json.get("question") or
+                    "correct_answer" not in content_json or not content_json.get("correct_answer")
+                ):
+                    continue
+                q_dict["content"] = content_json.get("question")
+                if isinstance(content_json["options"], dict):
+                    q_dict["options"] = [v for k, v in sorted(content_json["options"].items())]
+                    option_keys = list(sorted(content_json["options"].keys()))
+                elif isinstance(content_json["options"], list):
+                    q_dict["options"] = content_json["options"]
+                    option_keys = list(range(len(content_json["options"])))
+                else:
+                    q_dict["options"] = []
+                    option_keys = []
+                correct_answer = content_json.get("correct_answer")
+                if isinstance(q.answer, str) and correct_answer in option_keys:
+                    q_dict["correct"] = option_keys.index(correct_answer)
+                elif isinstance(q.answer, str) and q.answer in option_keys:
+                    q_dict["correct"] = option_keys.index(q.answer)
+                elif correct_answer in content_json["options"]:
+                    q_dict["correct"] = q_dict["options"].index(correct_answer)
+                else:
+                    q_dict["correct"] = -1
+            except Exception as e:
+                print("보충학습 객관식 파싱 에러:", e)
+                continue
+        elif q.question_type == "주관식":
+            if not q.content or not q.answer:
+                continue
+            q_dict["content"] = q.content
+            q_dict["options"] = ['정답 입력']
+            q_dict["correct"] = q.answer
+        elif q.question_type == "참거짓":
+            answer_clean = q.answer.strip() if q.answer else ""
+            if not q.content or not answer_clean or answer_clean not in ["참", "거짓", "true", "false"]:
+                continue
+            q_dict["content"] = q.content
+            q_dict["options"] = ['참', '거짓']
+            q_dict["correct"] = 0 if answer_clean in ["참", "true"] else 1
+        else:
+            continue
+        result.append(q_dict)
+    return result
 
 @router.post("/api/weak-review-history")
 def save_weak_review_history(
