@@ -146,15 +146,34 @@ def get_review_round(
         Question.number.in_(wrong_numbers)
     ).all()
     unsolved = [q for q in qlist if q.question_id not in solved_question_ids]
-    # 각 번호별로 1개씩만 랜덤 추출
+
+    # 2. 각 번호별로 1개씩만 랜덤 추출
     by_number = {}
     for q in unsolved:
         by_number.setdefault(q.number, []).append(q)
     selected_questions = []
     for num, qlist in by_number.items():
         selected_questions.append(random.choice(qlist))
-    # 최대 10문제 제한
+
+    # 3. 부족하면 material_id 전체 pool에서 랜덤으로 추가(중복 없이)
+    if len(selected_questions) < 10:
+        # 이미 뽑은 question_id는 제외
+        already_selected_ids = {q.question_id for q in selected_questions}
+        # 전체 pool에서 이미 푼 문제, 이미 뽑은 문제 제외
+        all_pool = db.query(Question).filter(
+            Question.slide_id.in_(slide_ids),
+            ~Question.question_id.in_(solved_question_ids + list(already_selected_ids))
+        ).all()
+        # 랜덤으로 부족한 만큼 추가
+        random.shuffle(all_pool)
+        for q in all_pool:
+            if len(selected_questions) >= 10:
+                break
+            selected_questions.append(q)
+
+    # 4. 최종 10문제만 반환
     selected_questions = selected_questions[:10]
+
     # 이하 기존 result 가공 코드 유지
     result = []
     for q in selected_questions:
