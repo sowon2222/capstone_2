@@ -156,17 +156,18 @@ router.post('/problem-session', authenticateToken, async (req, res) => {
 // 문제 채점 후 점수 저장
 router.post('/problem-session/:sessionId/score', authenticateToken, async (req, res) => {
   const { sessionId } = req.params;
+  const sessionIdNum = Number(sessionId); // 숫자로 변환
   const { score } = req.body;
   // sessionId로 user_id, material_id, current_round 조회
   const [rows] = await pool.query(
     'SELECT user_id, material_id, current_round FROM problem_solving_sessions WHERE session_id = ?',
-    [sessionId]
+    [sessionIdNum]
   );
+  console.log('score 저장용 세션 rows:', rows); // 추가
   const session = rows && rows[0] ? rows[0] : null;
   if (!session) {
     return res.status(404).json({ error: '세션을 찾을 수 없습니다.' });
   }
-
   await pool.query(
     `INSERT INTO problem_solving_scores (user_id, material_id, round, score)
      VALUES (?, ?, ?, ?)`,
