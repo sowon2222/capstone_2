@@ -15,12 +15,13 @@ router = APIRouter()
 class MaterialIdRequest(BaseModel):
     material_id: int
 
-# ✅ 번호(슬라이드/개념)별 3문제(상/중/하) 생성 API
+# 번호(슬라이드/개념)별 3문제(상/중/하) 생성 API
 @router.post("/quiz/generate-bulk-number")
 def generate_bulk_number_quiz(
-    material_id: int = Body(...),
+    req: MaterialIdRequest,
     db: Session = Depends(get_db)
 ):
+    material_id = req.material_id
     slides = db.query(Slide).filter(Slide.material_id == material_id).all()
     if not slides:
         raise HTTPException(status_code=404, detail="해당 강의자료의 슬라이드가 없습니다.")
@@ -78,7 +79,7 @@ def generate_bulk_number_quiz(
                 q = Question(
                     number=slide.slide_number,
                     slide_id=slide.slide_id,
-                    question_type=parsed.get("type"),
+                    question_type="참거짓" if parsed.get("type") in ["참/거짓", "참거짓"] else parsed.get("type"),
                     content=json.dumps(parsed, ensure_ascii=False) if parsed.get("type") == "객관식" else parsed.get("question"),
                     answer=parsed.get("correct_answer") or "정답 없음",
                     explanation=parsed.get("explanation"),
@@ -92,7 +93,7 @@ def generate_bulk_number_quiz(
                 print(f"문제 생성 실패 (slide_id={slide.slide_id}, 난이도={difficulty}):", e)
     return {"questions": generated_questions}
 
-# ✅ 1회차: 각 번호별 1문제(랜덤)씩 출제
+#1회차: 각 번호별 1문제(랜덤)씩 출제
 @router.get("/quiz/first-round")
 def get_first_round(material_id: int, db: Session = Depends(get_db)):
     slides = db.query(Slide).filter(Slide.material_id == material_id).all()
@@ -129,7 +130,7 @@ def get_first_round(material_id: int, db: Session = Depends(get_db)):
         result.append(q_dict)
     return result
 
-# ✅ 보충학습: 오답 번호별 아직 안 푼 문제 중 1문제(없으면 랜덤)씩 출제
+#보충학습: 오답 번호별 아직 안 푼 문제 중 1문제(없으면 랜덤)씩 출제
 @router.post("/quiz/review-round")
 def get_review_round(
     material_id: int = Body(...),
@@ -137,17 +138,15 @@ def get_review_round(
     solved_question_ids: List[int] = Body(...),
     db: Session = Depends(get_db)
 ):
-    # material_id에 해당하는 slide_id 목록 추출
     slides = db.query(Slide).filter(Slide.material_id == material_id).all()
     slide_ids = [slide.slide_id for slide in slides]
-    # 오답 번호에 해당하는 모든 문제 중, 이미 푼 문제 제외
     qlist = db.query(Question).filter(
         Question.slide_id.in_(slide_ids),
         Question.number.in_(wrong_numbers)
     ).all()
     unsolved = [q for q in qlist if q.question_id not in solved_question_ids]
 
-    # 2. 각 번호별로 1개씩만 랜덤 추출
+    # 각 번호별로 1개씩만 랜덤 추출
     by_number = {}
     for q in unsolved:
         by_number.setdefault(q.number, []).append(q)
@@ -155,23 +154,37 @@ def get_review_round(
     for num, qlist in by_number.items():
         selected_questions.append(random.choice(qlist))
 
-    # 3. 부족하면 material_id 전체 pool에서 랜덤으로 추가(중복 없이)
+    # 부족하면 전체 pool에서 랜덤 추가
     if len(selected_questions) < 10:
-        # 이미 뽑은 question_id는 제외
-        already_selected_ids = {q.question_id for q in selected_questions}
-        # 전체 pool에서 이미 푼 문제, 이미 뽑은 문제 제외
-        all_pool = db.query(Question).filter(
+        # 문제 자동생성 API 호출 → 함수 직접 호출로 대체
+        generate_bulk_number_quiz(MaterialIdRequest(material_id=material_id), db)
+        # 생성 후 다시 쿼리
+        slides = db.query(Slide).filter(Slide.material_id == material_id).all()
+        slide_ids = [slide.slide_id for slide in slides]
+        qlist = db.query(Question).filter(
             Question.slide_id.in_(slide_ids),
-            ~Question.question_id.in_(solved_question_ids + list(already_selected_ids))
+            Question.number.in_(wrong_numbers)
         ).all()
-        # 랜덤으로 부족한 만큼 추가
-        random.shuffle(all_pool)
-        for q in all_pool:
-            if len(selected_questions) >= 10:
-                break
-            selected_questions.append(q)
+        unsolved = [q for q in qlist if q.question_id not in solved_question_ids]
+        by_number = {}
+        for q in unsolved:
+            by_number.setdefault(q.number, []).append(q)
+        selected_questions = []
+        for num, qlist in by_number.items():
+            selected_questions.append(random.choice(qlist))
+        # 다시 부족하면 전체 pool에서 랜덤 추가
+        if len(selected_questions) < 10:
+            already_selected_ids = {q.question_id for q in selected_questions}
+            all_pool = db.query(Question).filter(
+                Question.slide_id.in_(slide_ids),
+                ~Question.question_id.in_(solved_question_ids + list(already_selected_ids))
+            ).all()
+            random.shuffle(all_pool)
+            for q in all_pool:
+                if len(selected_questions) >= 10:
+                    break
+                selected_questions.append(q)
 
-    # 4. 최종 10문제만 반환
     selected_questions = selected_questions[:10]
 
     # 이하 기존 result 가공 코드 유지
@@ -241,4 +254,4 @@ def get_number_questions(material_id: int, db: Session = Depends(get_db)):
 @router.post("/quiz/generate")
 def generate_quiz(req: MaterialIdRequest, db: Session = Depends(get_db)):
     material_id = req.material_id
-    return generate_bulk_number_quiz(material_id, db)
+    return generate_bulk_number_quiz(req, db)
