@@ -31,6 +31,10 @@ export default function ProblemSolving() {
   const [weakReviewCount, setWeakReviewCount] = useState(0); // 0~3
   const [isWeakReview, setIsWeakReview] = useState(false);
   const [showWeakReviewButton, setShowWeakReviewButton] = useState(false);
+  const [displayMinutes, setDisplayMinutes] = useState(0);
+  const [displaySeconds, setDisplaySeconds] = useState(0);
+  const [problemSession, setProblemSession] = useState(null);
+  const [problemProgress, setProblemProgress] = useState(null);
 
   const token = localStorage.getItem('token');
 
@@ -56,6 +60,7 @@ export default function ProblemSolving() {
       const res = await fetch(`http://localhost:8000/quiz/first-round?material_id=${materialId}`);
       const data = await res.json();
       setProblems(data);
+      console.log('problems:', data);
     } catch (e) {
       setProblems([]);
     }
@@ -73,6 +78,7 @@ export default function ProblemSolving() {
       });
       const data = await res.json();
       setProblems(data);
+      console.log('보충학습 problems:', data);
     } catch (e) {
       setProblems([]);
     }
@@ -99,19 +105,19 @@ export default function ProblemSolving() {
       const startSession = async () => {
         const token = localStorage.getItem('token');
         // [1] 세션 시작(또는 재사용) API 호출
-        const res = await fetch('http://localhost:3000/api/study-session/start', {
+        const res = await fetch('http://localhost:3000/api/problem-session', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ materialId: selectedDocument.material_id })
+          body: JSON.stringify({ materialId: Number(selectedDocument.material_id) })
         });
         const data = await res.json();
         setSessionId(data.sessionId);
 
         // [2] 기존 누적 학습시간 불러오기
-        const res2 = await fetch(`http://localhost:3000/api/study-session/${data.sessionId}`, {
+        const res2 = await fetch(`http://localhost:3000/api/problem-session/${data.sessionId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data2 = await res2.json();
@@ -184,41 +190,57 @@ export default function ProblemSolving() {
 
   // 제출 확인 모달
   const handleConfirmYes = async () => {
+    if (!problemSession || !problemSession.session_id) {
+      alert('문제풀이 세션이 정상적으로 생성되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+      return;
+    }
     // 전체 채점
     const allResults = problems.map((p, idx) => {
       const userAns = answers[idx];
       let userAnsValue = userAns;
-      if (p.type === '객관식' || p.type === '참/거짓' || p.type === '참거짓') {
-        userAnsValue = p.options[userAns];
-      }
-      let correctAnswer;
-      if (p.type === '객관식' && p.options && typeof p.correct === 'number') {
-        correctAnswer = p.options[p.correct];
-      } else if (p.type === '주관식') {
-        correctAnswer = p.correct;
-      } else if (p.type === '참/거짓' || p.type === '참거짓') {
-        correctAnswer = p.correct === 0 ? '참' : '거짓';
+      let correctAnswer = p.correct_answer || p.correct || '';
+      let isCorrect = false;
+
+      if (typeof userAns === 'string' && typeof correctAnswer === 'string') {
+        isCorrect = userAns.trim() === correctAnswer.trim();
+      } else if (typeof userAns === 'number' && typeof correctAnswer === 'number') {
+        isCorrect = userAns === correctAnswer;
       } else {
-        correctAnswer = p.correct;
+        isCorrect = userAns == correctAnswer;
       }
-      let isCorrect;
-      if (p.type === '객관식' || p.type === '참/거짓' || p.type === '참거짓') {
-        isCorrect = userAns === p.correct;
-      } else if (p.type === '주관식') {
-        isCorrect = userAns !== undefined && String(userAns).trim() !== '' && String(userAns).trim() === String(p.correct).trim();
-      } else {
-        isCorrect = false;
-      }
+
       return {
         question_id: p.id || p.question_id,
         number: p.number,
-        question: p.content,
+        question: p.question || p.content,
         correct_answer: correctAnswer,
         user_answer: userAnsValue,
         is_correct: isCorrect,
-        explanation: p.explanation
+        explanation: p.explanation || ''
       };
     });
+
+    // 세션 업데이트
+    // if (problemSession) {
+    //   allResults.forEach(result => {
+    //     updateProblemSession(result.question_id, result.is_correct);
+    //   });
+    // }
+
+    const correctCount = allResults.filter(r => r.is_correct).length;
+    const score = correctCount * 10; // 10문제 기준
+
+    // 점수 저장
+    const token = localStorage.getItem('token');
+    await fetch(`http://localhost:3000/api/problem-session/${problemSession.session_id}/score`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ score })
+    });
+
     setShowResult(allResults);
     setCurrentView('result');
   };
@@ -276,7 +298,7 @@ export default function ProblemSolving() {
 
   // 점수 계산
   const correctCount = problems.filter((p, idx) => {
-    if (p.type === '객관식' || p.type === '참/거짓') {
+    if (p.type === '객관식' || p.type === '참거짓') {
       return answers[idx] !== undefined && answers[idx] === p.correct;
     } else if (p.type === '주관식') {
       return answers[idx] !== undefined && String(answers[idx]).trim() === String(p.correct).trim();
@@ -286,88 +308,161 @@ export default function ProblemSolving() {
   const totalCount = problems.length;
   const score = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
 
-  const handleDocumentSelect = async (mat) => {
-    console.log('문제 생성 요청 material_id:', mat.material_id);
-    setCurrentView('problem');
-    setSelectedDocument(mat);
-    setAnswers({});
-    setShowResult(false);
+  // 문제 출제 useEffect (selectedDocument, problemSession이 모두 준비됐을 때만 동작)
+  useEffect(() => {
+    if (!selectedDocument || !problemSession) return;
     setProblemsLoading(true);
+    const round = problemSession.current_round || 1;
+    if (round === 1) {
+      fetchFirstRoundProblems(selectedDocument.material_id);
+    } else {
+      // showResult 등에서 오답 번호/ID 추출
+      const wrongNumbers = showResult
+        ? showResult.filter(r => !r.is_correct).map(r => Number(r.number)).filter(n => Number.isFinite(n) && !isNaN(n))
+        : [];
+      const solvedIds = showResult
+        ? showResult.map(r => r.question_id)
+        : [];
+      fetchReviewRoundProblems(selectedDocument.material_id, wrongNumbers, solvedIds);
+    }
+    setProblemsLoading(false);
+  }, [selectedDocument, problemSession]);
 
+  // 문제풀이 세션 초기화/불러오기
+  const initializeProblemSession = async (materialId) => {
     const token = localStorage.getItem('token');
-    // 1) DB에서 기존 문제 불러오기
-    let questions = await fetch(`http://localhost:8000/quiz/number-questions?material_id=${mat.material_id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).then(res => res.json());
+    console.log('initializeProblemSession materialId:', materialId, typeof materialId);
+    try {
+      // 1. 기존 세션 확인
+      const res = await fetch(`http://localhost:3000/api/problem-session/${materialId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.status === 404) {
+        // 404면 세션이 없으니 POST로 생성!
+        console.log('세션 없음(404), POST로 생성 시도!');
+        const postRes = await fetch('http://localhost:3000/api/problem-session', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ materialId: Number(materialId) })
+        });
+        const postData = await postRes.json();
+        console.log('세션 생성 결과:', postData);
 
-    // 2) 만약 DB에 문제 없으면 전체 내용에서 10개 문제 생성
-    if (!Array.isArray(questions) || questions.length === 0) {
-      const generateRes = await fetch('http://localhost:8000/quiz/generate', {
-        method: 'POST',
+        // 생성 후 반드시 다시 GET!
+        const res2 = await fetch(`http://localhost:3000/api/problem-session/${materialId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data2 = await res2.json();
+        setProblemSession(data2.session);
+        setProblemProgress(data2.progress);
+        setWeakReviewCount(data2.session.current_round - 1);
+        setIsWeakReview(data2.session.current_round > 1);
+      } else {
+        const data = await res.json();
+        if (data.session) {
+          setProblemSession(data.session);
+          setProblemProgress(data.progress);
+          setWeakReviewCount(data.session.current_round - 1);
+          setIsWeakReview(data.session.current_round > 1);
+        }
+      }
+    } catch (error) {
+      console.error('세션 초기화 실패:', error);
+      setProblemSession(null);
+    }
+  };
+
+  // 문제풀이 목록 UI 수정
+  const renderProblemList = () => {
+    return lectureMaterials.map((mat) => {
+      // 현재 라운드에 따른 뱃지 텍스트 설정
+      const roundLabel = mat.current_round > 1 
+        ? `보충학습 ${mat.current_round - 1}회차` 
+        : '본문제풀이';
+
+      return (
+        <div key={mat.material_id} className="bg-[#23232a] rounded-xl p-6 mb-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <div className="text-lg font-bold text-white">{mat.title}</div>
+              <div className="mt-2 flex gap-2 items-center">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
+                  {roundLabel}
+                </span>
+                {mat.scores && mat.scores.length > 0 ? (
+                  mat.scores.map((score, idx) => (
+                    <span 
+                      key={idx} 
+                      className="ml-2 px-2 py-1 rounded bg-[#23232a] text-[#3b82f6] text-xs font-semibold"
+                    >
+                      {score.round === 1 ? '본문제풀이' : `보충${score.round-1}회`} : {score.score}점
+                    </span>
+                  ))
+                ) : (
+                  <span className="ml-2 px-2 py-1 rounded bg-[#23232a] text-[#bbbbbb] text-xs font-semibold">
+                    채점 결과 없음
+                  </span>
+                )}
+              </div>
+            </div>
+            <button
+              className="px-6 py-2 bg-[#346aff] text-white rounded-lg font-bold hover:bg-[#2554b0] transition"
+              onClick={() => handleDocumentSelect(mat)}
+            >
+              {mat.current_round > 1 || (mat.scores && mat.scores.length > 0) 
+                ? '이어서 풀기' 
+                : '문제풀이 시작'}
+            </button>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  // 문제풀이 세션 업데이트
+  const updateProblemSession = async (questionId, isCorrect) => {
+    if (!problemSession) return;
+    // null 값이면 요청하지 않음
+    if (questionId == null || isCorrect == null) return;
+    const token = localStorage.getItem('token');
+    try {
+      await fetch(`http://localhost:3000/api/problem-session/${problemSession.session_id}`, {
+        method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          material_id: mat.material_id
+          questionId,
+          isCorrect,
+          currentRound: weakReviewCount + 1
         })
       });
-
-      if (!generateRes.ok) {
-        alert('문제 생성에 실패했습니다.');
-        setCurrentView('list');
-        setProblemsLoading(false);
-        return;
-      }
-
-      // 생성된 문제 가져오기
-      questions = await generateRes.json();
+    } catch (error) {
+      console.error('세션 업데이트 실패:', error);
     }
+  };
 
-    // 3) questions 처리해서 state에 세팅
-    if (!Array.isArray(questions) || questions.length === 0) {
-      alert('문제 생성에 실패했습니다.');
-      setCurrentView('list');
-      setProblemsLoading(false);
-      return;
+  // 뱃지 표시 개선 (문제풀이/보충학습)
+  const getRoundLabel = () => {
+    if (problemSession && problemSession.current_round > 1) {
+      return `보충학습 ${problemSession.current_round - 1}회차`;
     }
+    return '본문제풀이';
+  };
 
-    const processed = questions.map(q => {
-      let pq = {
-        id: q.question_id,
-        explanation: q.explanation,
-        difficulty: q.difficulty,
-        type: q.type,
-        number: q.number,
-      };
-
-      if (q.type === '객관식') {
-        pq.content = q.content || '';
-        pq.options = Array.isArray(q.options) ? q.options : [];
-        pq.correct = typeof q.correct === 'number' ? q.correct : -1;
-      } else if (q.type === '주관식') {
-        pq.content = q.content || '';
-        pq.options = ['정답 입력'];
-        pq.correct = q.correct || '';
-      } else if (q.type === '참/거짓' || q.type === '참거짓') {
-        pq.content = q.content || '';
-        pq.options = ['참', '거짓'];
-        pq.correct = typeof q.correct === 'number' ? q.correct : -1;
-      } else {
-        pq.content = q.content || '';
-        pq.options = [];
-        pq.correct = -1;
-      }
-      return pq;
-    });
-
-    if (processed.length === 0) {
-      alert('보충학습 문제를 생성할 수 없습니다.');
-      return;
-    }
-
-    setProblems(processed);
-    setProblemsLoading(false);
+  // handleDocumentSelect는 세션만 초기화
+  const handleDocumentSelect = async (mat) => {
+    setCurrentView('problem');
+    setSelectedDocument(mat);
+    setAnswers({});
+    setShowResult(false);
+    setProblemsLoading(true);
+    await initializeProblemSession(Number(mat.material_id));
+    // 문제 출제는 useEffect에서!
   };
 
   // 문제풀이 결과 화면에서 목록으로 돌아가기
@@ -405,8 +500,9 @@ export default function ProblemSolving() {
   const seconds = totalSeconds % 60;
 
   const handleStartWeakReview = async () => {
+    const newReviewCount = weakReviewCount + 1;
     setIsWeakReview(true);
-    setWeakReviewCount(prev => prev + 1);
+    setWeakReviewCount(newReviewCount);
 
     // 1. 오답 문제의 "문제 번호"만 숫자 배열로 추출 (NaN 제거)
     const wrongNumbers = showResult
@@ -422,7 +518,8 @@ export default function ProblemSolving() {
     console.log('보충학습 요청 payload', {
       material_id: selectedDocument.material_id,
       wrong_numbers: wrongNumbers,
-      solved_question_ids: excludeIds
+      solved_question_ids: excludeIds,
+      review_round: newReviewCount
     });
 
     const res = await fetch('http://localhost:8000/quiz/review-round', {
@@ -431,108 +528,174 @@ export default function ProblemSolving() {
       body: JSON.stringify({
         material_id: selectedDocument.material_id,
         wrong_numbers: wrongNumbers,
-        solved_question_ids: excludeIds
+        solved_question_ids: excludeIds,
+        review_round: newReviewCount
       })
     });
     const data = await res.json();
+
+    // [추가] 응답에 review_round가 있으면 weakReviewCount에 반영
     if (Array.isArray(data)) {
       setProblems(data);
+      if (data.length > 0 && typeof data[0].review_round === 'number') {
+        setWeakReviewCount(data[0].review_round);
+      } else if (typeof data.review_round === 'number') {
+        setWeakReviewCount(data.review_round);
+      } else {
+        setWeakReviewCount(weakReviewCount + 1);
+      }
     } else {
       setProblems([]);
     }
     setAnswers({});
     setShowResult(false);
     setCurrentView('problem');
+
+    // 세션 업데이트
+    // if (problemSession) {
+    //   await updateProblemSession(null, null, newReviewCount);
+    // }
   };
+
+  useEffect(() => {
+    // 타이머 업데이트
+    const timer = setInterval(() => {
+      setSessionTimer(prev => {
+        const newTime = prev + 1;
+        setDisplayMinutes(Math.floor(newTime / 60));
+        setDisplaySeconds(newTime % 60);
+        return newTime;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   if (currentView === 'list') {
     return (
       <div className="min-h-screen bg-[#18181B]">
         <HeaderBar />
         <div className="w-full max-w-2xl mx-auto px-4 py-8">
-          {lectureMaterials.length === 0 ? (
-            <div className="text-white text-center">업로드된 강의자료가 없습니다.</div>
-          ) : (
-            lectureMaterials.map((mat) => (
-              <div key={mat.material_id} className="bg-[#23232a] rounded-xl p-6 mb-6 flex justify-between items-center">
-                <div>
-                  <div className="text-lg font-bold text-white">{mat.title}</div>
-                  <div className="text-[#bbbbbb] text-sm">페이지 수: {mat.page} | 진도율: {mat.progress}%</div>
-                </div>
-                <button
-                  className="px-6 py-2 bg-[#346aff] text-white rounded-lg font-bold hover:bg-[#2554b0] transition"
-                  onClick={() => handleDocumentSelect(mat)}
-                >
-                  문제풀이 시작
-                </button>
-              </div>
-            ))
-          )}
+          {renderProblemList()}
         </div>
       </div>
     );
   }
 
   if (currentView === 'problem') {
+    if (problemsLoading) {
+      return (
+        <div className="min-h-screen bg-[#18181B] flex items-center justify-center">
+          <div className="text-white text-center">문제를 불러오는 중입니다...</div>
+        </div>
+      );
+    }
+
+    if (!problems || problems.length === 0 || !problems[currentSlideIdx]) {
+      return (
+        <div className="min-h-screen bg-[#18181B] flex items-center justify-center">
+          <div className="text-white text-center">문제가 없습니다.</div>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen bg-[#18181B]">
+      <div className="min-h-screen bg-[#18181B] flex flex-col" style={{overflowY: 'hidden'}}>
         <HeaderBar />
-        <div className="w-full max-w-2xl mx-auto px-4 py-8">
-          {problemsLoading ? (
-            <div className="text-white text-center">문제를 불러오는 중입니다...</div>
-          ) : problems.length === 0 ? (
-            <div className="text-white text-center">문제가 없습니다.</div>
-          ) : (
-            <div>
-              {/* 문제 번호 네비게이션 */}
-              <div className="flex justify-center mb-4">
-                {problems.map((_, idx) => (
-                  <button
-                    key={idx}
-                    className={`mx-1 px-3 py-1 rounded-full ${idx === currentSlideIdx ? 'bg-[#346aff] text-white' : 'bg-[#23232a] text-[#bbbbbb]'}`}
-                    onClick={() => handleNumberClick(idx)}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
+        <div className="flex-1 flex items-start justify-center w-full" style={{paddingTop: 80}}>
+          {/* 문제 번호 + 문제 카드 묶음 */}
+          <div className="flex flex-row items-start justify-center">
+            {/* 네비 + 뒤로가기 */}
+            <div className="flex flex-col items-center min-w-[60px] mr-6">
+              <button
+                onClick={handleStop}
+                className="mb-4 w-9 h-9 flex items-center justify-center rounded-lg bg-[#23232a] text-[#bbbbbb] hover:bg-[#346aff] hover:text-white transition shadow"
+                title="목록으로"
+                style={{fontSize: '1.2rem'}}
+              >
+                <FaArrowLeft />
+              </button>
+              {problems.map((_, idx) => (
+                <button
+                  key={idx}
+                  className={`mb-2 w-9 h-9 min-w-[36px] min-h-[36px] max-w-[36px] max-h-[36px] rounded-lg flex items-center justify-center font-bold text-base transition
+                    ${idx === currentSlideIdx
+                      ? 'bg-[#346aff] text-white shadow-lg scale-110'
+                      : 'bg-[#23232a]/70 text-[#bbbbbb] hover:bg-[#346aff] hover:text-white'}`}
+                  onClick={() => handleNumberClick(idx)}
+                  style={{fontSize: '1.1rem'}}
+                >
+                  {idx + 1}
+                </button>
+              ))}
+            </div>
+            {/* 문제 카드 */}
+            <div className="relative w-full max-w-2xl bg-[#23232a] rounded-2xl shadow-2xl px-8 py-10 flex flex-col justify-between ml-[90px]" style={{margin: '0 auto', minHeight: 420, marginTop: 0}}>
+              {/* 뱃지 그룹: 카드 오른쪽 상단에 고정 */}
+              <div className="absolute top-6 right-8 flex flex-row gap-2 flex-wrap items-center z-10">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-900/30 text-orange-400 text-xs font-semibold">
+                  <FaFire className="mr-1" /> {currentSlideIdx + 1}/{problems.length} 문제
+                </span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900/30 text-blue-400 text-xs font-semibold">
+                  <FaClock className="mr-1" /> {displayMinutes}분 {displaySeconds}초 학습
+                </span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
+                  <FaChartLine className="mr-1" /> {getRoundLabel()}
+                </span>
               </div>
-              {/* 문제 내용 */}
-              <div className="bg-[#23232a] rounded-xl p-6 mb-6">
-                <div className="text-lg font-bold text-white mb-2">
-                  {problems[currentSlideIdx].content}
-                </div>
-                <div className="mb-4">
-                  {problems[currentSlideIdx].type === '주관식' ? (
-                    <input
-                      type="text"
-                      className="block w-full px-4 py-2 mb-2 rounded-lg bg-[#18181B] text-white border border-[#346aff] focus:outline-none"
-                      placeholder="정답을 입력하세요"
-                      value={answers[currentSlideIdx] || ''}
-                      onChange={e => setAnswers(prev => ({ ...prev, [currentSlideIdx]: e.target.value }))}
-                    />
-                  ) : (
-                    problems[currentSlideIdx].options.map((opt, idx) => (
-                      <button
-                        key={idx}
-                        className={`block w-full text-left px-4 py-2 mb-2 rounded-lg ${answers[currentSlideIdx] === idx ? 'bg-[#346aff] text-white' : 'bg-[#18181B] text-[#bbbbbb]'}`}
-                        onClick={() => handleOptionSelect(idx)}
-                      >
-                        {opt}
-                      </button>
-                    ))
+              {/* 상단: 난이도(왼쪽) */}
+              <div className="flex flex-col w-full">
+                <div className="mb-2">
+                  {problems[currentSlideIdx].difficulty && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#23232a] text-[#3b82f6] text-sm font-semibold">
+                      난이도: {problems[currentSlideIdx].difficulty}
+                    </span>
                   )}
                 </div>
-                <div className="flex justify-between">
-                  <button onClick={handlePrev} disabled={currentSlideIdx === 0} className="px-4 py-2 bg-[#444] text-white rounded-lg">이전</button>
-                  <button onClick={handleNext} disabled={currentSlideIdx === problems.length - 1} className="px-4 py-2 bg-[#444] text-white rounded-lg">다음</button>
-                </div>
-                <div className="mt-4 flex justify-between">
-                  <button onClick={handleStop} className="px-4 py-2 bg-[#888] text-white rounded-lg">목록으로</button>
-                  <button onClick={handleConfirmYes} className="px-4 py-2 bg-[#346aff] text-white rounded-lg">제출</button>
+                {/* 질문 */}
+                <div className="text-xl font-extrabold text-white mb-8" style={{lineHeight: 1.6}}>
+                  {problems[currentSlideIdx].content}
                 </div>
               </div>
+              {/* 선택지/입력 */}
+              <div className="mb-10">
+                {problems[currentSlideIdx].type === '주관식' ? (
+                  <input
+                    type="text"
+                    className="block w-full px-5 py-3 rounded-lg bg-[#18181B] text-white border border-[#346aff] focus:outline-none focus:ring-2 focus:ring-[#346aff] text-base"
+                    placeholder="정답을 입력하세요"
+                    value={answers[currentSlideIdx] || ''}
+                    onChange={e => setAnswers(prev => ({ ...prev, [currentSlideIdx]: e.target.value }))}
+                    style={{lineHeight: 1.5}}
+                  />
+                ) : (
+                  problems[currentSlideIdx] && problems[currentSlideIdx].options && Array.isArray(problems[currentSlideIdx].options) && problems[currentSlideIdx].options.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      className={`block w-full text-left px-5 py-3 mb-3 rounded-lg text-base font-medium transition flex items-center
+                        ${answers[currentSlideIdx] === idx
+                          ? 'bg-[#346aff] text-white shadow scale-[1.03]'
+                          : 'bg-[#18181B] text-[#bbbbbb] hover:bg-[#346aff]/80 hover:text-white'}`}
+                      onClick={() => handleOptionSelect(idx)}
+                      style={{lineHeight: 1.5, transition: 'all 0.15s'}}
+                    >
+                      <span className="mr-3 font-bold" style={{minWidth: 24, display: 'inline-block'}}>{`${idx + 1}.`}</span>
+                      <span>{opt}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              {/* 버튼 */}
+              <div className="flex justify-end gap-3 mt-6" style={{marginTop: 24}}>
+                <button onClick={handlePrev} disabled={currentSlideIdx === 0}
+                  className="px-5 py-2 rounded-lg bg-[#23232a] text-[#bbbbbb] border border-[#444] hover:bg-[#444] hover:text-white transition disabled:opacity-50">이전</button>
+                <button onClick={handleNext} disabled={currentSlideIdx === problems.length - 1}
+                  className="px-5 py-2 rounded-lg bg-[#23232a] text-[#bbbbbb] border border-[#444] hover:bg-[#444] hover:text-white transition disabled:opacity-50">다음</button>
+                <button onClick={handleConfirmYes}
+                  className="px-5 py-2 rounded-lg bg-[#1e90ff] hover:bg-[#346aff] text-white font-bold shadow-lg transition scale-105">제출</button>
+              </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     );
