@@ -11,6 +11,7 @@ const fs = require('fs');
 const { summarizeWithGPT, summarizeSlideWithGPT, summarizeMaterialWithGPT } = require('./summarizeWithGPT');
 const { fromPath } = require('pdf2pic');
 const sharp = require('sharp');
+const problemSessionRouter = require('./problemSession');
 require('dotenv').config();
 
 const app = express();
@@ -819,4 +820,6 @@ const server = app.listen(PORT, () => {
 // BigInt를 문자열로 변환하는 함수 추가
 BigInt.prototype.toJSON = function() {
     return this.toString();
-}; 
+};
+
+app.use('/api', problemSessionRouter); 
