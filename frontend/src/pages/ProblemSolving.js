@@ -57,8 +57,19 @@ export default function ProblemSolving() {
   const fetchFirstRoundProblems = async (materialId) => {
     setProblemsLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/quiz/first-round?material_id=${materialId}`);
-      const data = await res.json();
+      let res = await fetch(`http://localhost:8000/quiz/first-round?material_id=${materialId}`);
+      let data = await res.json();
+      // 문제가 없으면 자동 생성 API 호출
+      if (!data || data.length === 0) {
+        await fetch('http://localhost:8000/quiz/generate-bulk-number', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ material_id: materialId })
+        });
+        // 생성 후 다시 문제 불러오기
+        res = await fetch(`http://localhost:8000/quiz/first-round?material_id=${materialId}`);
+        data = await res.json();
+      }
       setProblems(data);
       console.log('problems:', data);
     } catch (e) {
