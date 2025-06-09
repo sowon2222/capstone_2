@@ -1,5 +1,3 @@
-// problemSession.js (백엔드)
-
 const express = require('express');
 const router = express.Router();
 const pool = require('./db'); // db.js에서 pool만 import
@@ -168,12 +166,47 @@ router.post('/problem-session/:sessionId/score', authenticateToken, async (req, 
   if (!session) {
     return res.status(404).json({ error: '세션을 찾을 수 없습니다.' });
   }
-  await pool.query(
-    `INSERT INTO problem_solving_scores (user_id, material_id, round, score)
-     VALUES (?, ?, ?, ?)`,
-    [session.user_id, session.material_id, session.current_round, score]
-  );
-  res.json({ success: true });
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    // 1. 점수 저장 (중복 라운드 덮어쓰기)
+    await conn.query(
+      `INSERT INTO problem_solving_scores (user_id, material_id, round, score)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE score = VALUES(score), created_at = CURRENT_TIMESTAMP`,
+      [session.user_id, session.material_id, session.current_round, score]
+    );
+
+    // 2. 세션의 current_round 증가
+    await conn.query(
+      `UPDATE problem_solving_sessions 
+       SET current_round = current_round + 1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE session_id = ?`,
+      [sessionIdNum]
+    );
+
+    // 3. 진행상황의 current_round도 증가
+    await conn.query(
+      `UPDATE problem_solving_progress 
+       SET current_round = current_round + 1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND material_id = ?`,
+      [session.user_id, session.material_id]
+    );
+
+    await conn.commit();
+    res.json({ success: true });
+  } catch (error) {
+    if (conn) await conn.rollback();
+    console.error('점수 저장 실패:', error);
+    res.status(500).json({ error: '점수 저장 실패' });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
 module.exports = router;
