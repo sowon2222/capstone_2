@@ -323,11 +323,10 @@ export default function ProblemSolving() {
   useEffect(() => {
     if (!selectedDocument || !problemSession) return;
     setProblemsLoading(true);
-    const round = problemSession.current_round || 1;
-    if (round === 1) {
+    if (problemSession.current_round === 1) {
       fetchFirstRoundProblems(selectedDocument.material_id);
     } else {
-      // showResult 등에서 오답 번호/ID 추출
+      // 보충학습: 오답 정보는 showResult에서만 추출
       const wrongNumbers = showResult
         ? showResult.filter(r => !r.is_correct).map(r => Number(r.number)).filter(n => Number.isFinite(n) && !isNaN(n))
         : [];
@@ -342,16 +341,14 @@ export default function ProblemSolving() {
   // 문제풀이 세션 초기화/불러오기
   const initializeProblemSession = async (materialId) => {
     const token = localStorage.getItem('token');
-    console.log('initializeProblemSession materialId:', materialId, typeof materialId);
     try {
       // 1. 기존 세션 확인
       const res = await fetch(`http://localhost:3000/api/problem-session/${materialId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.status === 404) {
-        // 404면 세션이 없으니 POST로 생성!
-        console.log('세션 없음(404), POST로 생성 시도!');
-        const postRes = await fetch('http://localhost:3000/api/problem-session', {
+        // 404면 세션이 없으니 POST로 생성
+        await fetch('http://localhost:3000/api/problem-session', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -359,27 +356,14 @@ export default function ProblemSolving() {
           },
           body: JSON.stringify({ materialId: Number(materialId) })
         });
-        const postData = await postRes.json();
-        console.log('세션 생성 결과:', postData);
-
-        // 생성 후 반드시 다시 GET!
-        const res2 = await fetch(`http://localhost:3000/api/problem-session/${materialId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data2 = await res2.json();
-        setProblemSession(data2.session);
-        setProblemProgress(data2.progress);
-        setWeakReviewCount(data2.session.current_round - 1);
-        setIsWeakReview(data2.session.current_round > 1);
-      } else {
-        const data = await res.json();
-        if (data.session) {
-          setProblemSession(data.session);
-          setProblemProgress(data.progress);
-          setWeakReviewCount(data.session.current_round - 1);
-          setIsWeakReview(data.session.current_round > 1);
-        }
       }
+      // 생성/조회 후 세션 정보 다시 GET
+      const res2 = await fetch(`http://localhost:3000/api/problem-session/${materialId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data2 = await res2.json();
+      setProblemSession(data2.session);
+      setProblemProgress(data2.progress);
     } catch (error) {
       console.error('세션 초기화 실패:', error);
       setProblemSession(null);
@@ -389,44 +373,74 @@ export default function ProblemSolving() {
   // 문제풀이 목록 UI 수정
   const renderProblemList = () => {
     return lectureMaterials.map((mat) => {
-      // 현재 라운드에 따른 뱃지 텍스트 설정
-      const roundLabel = mat.current_round > 1 
-        ? `보충학습 ${mat.current_round - 1}회차` 
+      // 라운드별 점수 하나씩만 추출 (본문제풀이/보충1/2/3)
+      const uniqueScores = [1,2,3,4].map(round =>
+        mat.scores.find(s => s.round === round)
+      ).filter(Boolean);
+
+      // 뱃지 텍스트
+      const roundLabel = uniqueScores.length > 0
+        ? (uniqueScores[uniqueScores.length-1].round === 1
+            ? '본문제풀이'
+            : `보충학습 ${uniqueScores[uniqueScores.length-1].round-1}회차`)
         : '본문제풀이';
 
       return (
-        <div key={mat.material_id} className="bg-[#23232a] rounded-xl p-6 mb-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <div className="text-lg font-bold text-white">{mat.title}</div>
-              <div className="mt-2 flex gap-2 items-center">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
-                  {roundLabel}
-                </span>
-                {mat.scores && mat.scores.length > 0 ? (
-                  mat.scores.map((score, idx) => (
-                    <span 
-                      key={idx} 
-                      className="ml-2 px-2 py-1 rounded bg-[#23232a] text-[#3b82f6] text-xs font-semibold"
-                    >
-                      {score.round === 1 ? '본문제풀이' : `보충${score.round-1}회`} : {score.score}점
-                    </span>
-                  ))
-                ) : (
-                  <span className="ml-2 px-2 py-1 rounded bg-[#23232a] text-[#bbbbbb] text-xs font-semibold">
-                    채점 결과 없음
+        <div key={mat.material_id} className="bg-[#23232a] rounded-2xl shadow-lg p-7 mb-8 transition-transform hover:scale-[1.015] hover:shadow-2xl flex flex-col md:flex-row md:items-center md:justify-between gap-6 border border-[#23232a]/60 hover:border-[#346aff]/40">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <span className="text-lg md:text-xl font-extrabold text-white truncate max-w-[300px]">{mat.title}</span>
+              {(() => {
+                const lastRound = uniqueScores.length > 0 ? uniqueScores[uniqueScores.length-1].round : 1;
+                const badgeClass = lastRound === 1 ? 'bg-green-900/40 text-green-200' : 'bg-orange-900/40 text-orange-200';
+                return (
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${badgeClass}`}>{roundLabel}</span>
+                );
+              })()}
+            </div>
+            {/* 점수 뱃지 개선: 본문제풀이/보충학습 각각 한 줄씩 */}
+            <div className="flex flex-col gap-1 mt-1 mb-2">
+              {/* 본문제풀이 점수 */}
+              <div className="flex flex-row gap-3 mb-2">
+                {uniqueScores.filter(s => s.round === 1).map((score, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 rounded-full text-xs font-semibold shadow-sm bg-[#444] text-[#eee]"
+                  >
+                    본문제풀이 : {score.score}점
                   </span>
-                )}
+                ))}
+              </div>
+              {/* 보충학습 점수 (1~3회차) */}
+              <div className="flex flex-row gap-3">
+                {uniqueScores.filter(s => s.round > 1).map((score, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 rounded-full text-xs font-semibold shadow-sm bg-[#444] text-[#eee]"
+                  >
+                    보충{score.round-1}회 : {score.score}점
+                  </span>
+                ))}
               </div>
             </div>
-            <button
-              className="px-6 py-2 bg-[#346aff] text-white rounded-lg font-bold hover:bg-[#2554b0] transition"
-              onClick={() => handleDocumentSelect(mat)}
-            >
-              {mat.current_round > 1 || (mat.scores && mat.scores.length > 0) 
-                ? '이어서 풀기' 
-                : '문제풀이 시작'}
-            </button>
+          </div>
+          <div className="flex-shrink-0 flex items-center">
+            {uniqueScores.length >= 4 ? (
+              <button
+                className="px-7 py-3 bg-[#888]/70 text-white rounded-xl font-bold cursor-not-allowed text-base shadow-md"
+                disabled
+              >
+                문제풀이 완료
+              </button>
+            ) : (
+              <button
+                className="px-7 py-3 bg-[#346aff] text-white rounded-xl font-bold hover:bg-[#2554b0] transition text-base shadow-md"
+                onClick={() => handleDocumentSelect(mat)}
+                disabled={uniqueScores.length >= 4}
+              >
+                {uniqueScores.length > 0 && uniqueScores.length < 4 ? `보충학습 ${uniqueScores.length}회차 시작` : '문제풀이 시작'}
+              </button>
+            )}
           </div>
         </div>
       );
@@ -458,11 +472,10 @@ export default function ProblemSolving() {
   };
 
   // 뱃지 표시 개선 (문제풀이/보충학습)
-  const getRoundLabel = () => {
-    if (problemSession && problemSession.current_round > 1) {
-      return `보충학습 ${problemSession.current_round - 1}회차`;
-    }
-    return '본문제풀이';
+  const getRoundLabel = (session) => {
+    if (!session) return '';
+    if (session.current_round === 1) return '본문제풀이';
+    return `보충학습 ${session.current_round - 1}회차`;
   };
 
   // handleDocumentSelect는 세션만 초기화
@@ -511,61 +524,35 @@ export default function ProblemSolving() {
   const seconds = totalSeconds % 60;
 
   const handleStartWeakReview = async () => {
-    const newReviewCount = weakReviewCount + 1;
-    setIsWeakReview(true);
-    setWeakReviewCount(newReviewCount);
-
-    // 1. 오답 문제의 "문제 번호"만 숫자 배열로 추출 (NaN 제거)
+    if (!problemSession) return;
+    const token = localStorage.getItem('token');
+    // 오답 정보 추출
     const wrongNumbers = showResult
-      .filter(r => !r.is_correct)
-      .map(r => Number(r.number))
-      .filter(n => Number.isFinite(n) && !isNaN(n));
-    console.log('wrongNumbers:', wrongNumbers);
-
-    const excludeIds = Array.isArray(problems)
-      ? problems.map(p => p.id || p.question_id)
+      ? showResult.filter(r => !r.is_correct).map(r => Number(r.number)).filter(n => Number.isFinite(n) && !isNaN(n))
       : [];
-
-    console.log('보충학습 요청 payload', {
-      material_id: selectedDocument.material_id,
-      wrong_numbers: wrongNumbers,
-      solved_question_ids: excludeIds,
-      review_round: newReviewCount
+    const solvedIds = showResult
+      ? showResult.map(r => r.question_id)
+      : [];
+    // current_round 증가
+    await fetch(`http://localhost:3000/api/problem-session/${problemSession.session_id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ currentRound: problemSession.current_round + 1 })
     });
-
-    const res = await fetch('http://localhost:8000/quiz/review-round', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        material_id: selectedDocument.material_id,
-        wrong_numbers: wrongNumbers,
-        solved_question_ids: excludeIds,
-        review_round: newReviewCount
-      })
+    // 세션 정보 다시 불러오기
+    const res = await fetch(`http://localhost:3000/api/problem-session/${selectedDocument.material_id}`, {
+      headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
-
-    // [추가] 응답에 review_round가 있으면 weakReviewCount에 반영
-    if (Array.isArray(data)) {
-      setProblems(data);
-      if (data.length > 0 && typeof data[0].review_round === 'number') {
-        setWeakReviewCount(data[0].review_round);
-      } else if (typeof data.review_round === 'number') {
-        setWeakReviewCount(data.review_round);
-      } else {
-        setWeakReviewCount(weakReviewCount + 1);
-      }
-    } else {
-      setProblems([]);
-    }
+    setProblemSession(data.session);
+    // 보충학습 문제 출제
+    await fetchReviewRoundProblems(selectedDocument.material_id, wrongNumbers, solvedIds);
     setAnswers({});
     setShowResult(false);
     setCurrentView('problem');
-
-    // 세션 업데이트
-    // if (problemSession) {
-    //   await updateProblemSession(null, null, newReviewCount);
-    // }
   };
 
   useEffect(() => {
@@ -581,6 +568,18 @@ export default function ProblemSolving() {
 
     return () => clearInterval(timer);
   }, []);
+
+  const getLastRound = (mat) => {
+    if (mat.scores && mat.scores.length > 0) {
+      return mat.scores[mat.scores.length - 1].round;
+    }
+    return 1;
+  };
+
+  const roundLabel = (mat) => {
+    const lastRound = getLastRound(mat);
+    return lastRound > 1 ? `보충학습 ${lastRound - 1}회차` : '본문제풀이';
+  };
 
   if (currentView === 'list') {
     return (
@@ -651,7 +650,7 @@ export default function ProblemSolving() {
                   <FaClock className="mr-1" /> {displayMinutes}분 {displaySeconds}초 학습
                 </span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-green-900/30 text-green-400 text-xs font-semibold">
-                  <FaChartLine className="mr-1" /> {getRoundLabel()}
+                  <FaChartLine className="mr-1" /> {getRoundLabel(problemSession)}
                 </span>
               </div>
               {/* 상단: 난이도(왼쪽) */}
@@ -715,8 +714,7 @@ export default function ProblemSolving() {
   if (currentView === 'result') {
     const correctCount = showResult.filter(r => r.is_correct).length;
     const totalCount = showResult.length;
-    const hasWrong = correctCount < totalCount && weakReviewCount < 3;
-    console.log('showResult:', showResult);
+    const hasWrong = correctCount < totalCount && problemSession && problemSession.current_round < 4;
     return (
       <div className="min-h-screen bg-[#18181B]">
         <HeaderBar />
@@ -750,9 +748,9 @@ export default function ProblemSolving() {
           ))}
           <div className="flex justify-between mt-6">
             <button onClick={handleBackToList} className="px-4 py-2 bg-[#888] text-white rounded-lg">목록으로</button>
-            {hasWrong && (
+            {hasWrong && problemSession && (
               <button onClick={handleStartWeakReview} className="px-4 py-2 bg-[#ff6b6b] text-white rounded-lg">
-                보충학습 시작 ({weakReviewCount + 1}회차)
+                {`보충학습 시작 (${problemSession.current_round}회차)`}
               </button>
             )}
           </div>
