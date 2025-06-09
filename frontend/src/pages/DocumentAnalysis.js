@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -34,6 +34,8 @@ const DocumentAnalysis = () => {
   const [sessionTimer, setSessionTimer] = useState(0); // 현재 세션에서 측정된 시간(초)
   const sessionTimerInterval = useRef(null);
   const interruptionStartRef = useRef(null);
+  const [ocrText, setOcrText] = useState('');
+  const [imageBase64, setImageBase64] = useState(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -227,36 +229,28 @@ const DocumentAnalysis = () => {
 
   // --- 6) 페이지 선택 & 분석 ---
   const handlePageSelect = async (pageNumber) => {
-    if (!materialId) {
-      alert('강의자료가 업로드되지 않았습니다.');
-      return;
-    }
-    setSelectedPage(pageNumber);
-    setCurrentPage(pageNumber);
-    setViewedPages(prev => prev.includes(pageNumber) ? prev : [...prev, pageNumber]);
-    setLoading(true);
+    if (!materialId) return;
+    const token = localStorage.getItem('token');
     setIsRequestingSummary(true);
-    if (!analysisStartTime.current) {
-      analysisStartTime.current = new Date().toISOString();
-    }
+    setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      // 슬라이드 요약 요청 API 호출 (POST)
+      // 1. 요약 요청
       const res = await fetch(`http://localhost:3000/archive/${materialId}/slide/${pageNumber}/summary`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error('요약 요청 실패');
       const data = await res.json();
-      setAnalysis(data.slide || null);
+      
+      // 2. 결과 처리
+      setAnalysis(data.slide);
       setSlideAnalyses(prev => ({ ...prev, [pageNumber]: data.slide }));
       setIsRequestingSummary(false);
-      setTimer(pageTimes[pageNumber] || 0);
-    } catch {
-      alert('슬라이드 요약을 불러오는 중 오류가 발생했습니다.');
-      setIsRequestingSummary(false);
-    } finally {
       setLoading(false);
+    } catch (e) {
+      setIsRequestingSummary(false);
+      setLoading(false);
+      alert(e.message);
     }
   };
 
@@ -406,47 +400,8 @@ const DocumentAnalysis = () => {
     return kst.toISOString().slice(0, 19).replace('T', ' ');
   }
 
-  // 페이지 이동(라우트 변경) 감지해서 interruption session 저장
-  useEffect(() => {
-    if (mode !== 'analysis') return;
-    const prevPathRef = { current: location.pathname };
-    const unlisten = () => {
-      // react-router v6에서는 useEffect로 location 변경 감지
-      // location이 바뀌면(즉, 페이지 이동) interruption session 저장
-      if (mode === 'analysis' && interruptionStartRef.current) {
-        const interruptionEnd = new Date();
-        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
-        interruptionStartRef.current = null;
-      }
-    };
-    // location 변경 감지
-    return () => {
-      if (mode === 'analysis' && interruptionStartRef.current) {
-        const interruptionEnd = new Date();
-        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
-        interruptionStartRef.current = null;
-      }
-    };
-  }, [location, mode]);
-
-  // 기존 visibilitychange 핸들러에서 interruptionStart를 ref로 변경
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        interruptionStartRef.current = new Date();
-      } else if (document.visibilityState === 'visible' && interruptionStartRef.current) {
-        const interruptionEnd = new Date();
-        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
-        interruptionStartRef.current = null;
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  const saveInterruptionSession = async (start, end) => {
+  // Move saveInterruptionSession before useEffect and wrap in useCallback
+  const saveInterruptionSession = useCallback(async (start, end) => {
     const token = localStorage.getItem('token');
     const payload = parseJwt(token);
     const user_id = payload?.user_id;
@@ -464,7 +419,44 @@ const DocumentAnalysis = () => {
         is_interrupted: true
       })
     });
-  };
+  }, []); // Empty dependency array since it only uses stable values
+
+  // Now the useEffect can safely use saveInterruptionSession
+  useEffect(() => {
+    if (mode !== 'analysis') return;
+    const prevPathRef = { current: location.pathname };
+    const unlisten = () => {
+      if (mode === 'analysis' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+    return () => {
+      if (mode === 'analysis' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+  }, [location, mode, saveInterruptionSession]);
+
+  // 기존 visibilitychange 핸들러에서 interruptionStart를 ref로 변경
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        interruptionStartRef.current = new Date();
+      } else if (document.visibilityState === 'visible' && interruptionStartRef.current) {
+        const interruptionEnd = new Date();
+        saveInterruptionSession(interruptionStartRef.current, interruptionEnd);
+        interruptionStartRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   if (mode === 'list') {
     return (
@@ -617,17 +609,13 @@ const DocumentAnalysis = () => {
             <div className="w-1/2 bg-[#23232a] rounded-xl shadow p-4 flex flex-col items-center min-h-[500px] overflow-y-auto">
               <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
               <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar">
-                {analysis && analysis.image_url ? (
+                {file && (
                   <img
                     key={selectedPage}
-                    src={`http://localhost:3000${analysis.image_url}`}
+                    src={`http://localhost:3000/uploads/m_${materialId}_s_${selectedPage}.png`}
                     alt={`슬라이드 ${selectedPage} 이미지`}
                     style={{ width: '100%', maxHeight: 500, objectFit: 'contain' }}
                   />
-                ) : (
-                  <div className="text-[#bbbbbb] text-center w-full h-full flex items-center justify-center">
-                    슬라이드 이미지를 불러오는 중이거나, 아직 분석 결과가 없습니다.
-                  </div>
                 )}
               </div>
             </div>
@@ -660,52 +648,40 @@ const DocumentAnalysis = () => {
                 </div>
               ) : analysis ? (
                 <div className="space-y-3">
-                  {analysis.slide_title && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">제목</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.slide_title.replace(/^슬라이드 제목\\(소주제\\):?\\s*/i, '')}</p>
+                  {/* 제목 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">제목</h3>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.slide_title?.trim() ? analysis.slide_title.replace(/^슬라이드 제목\\(소주제\\):?\\s*/i, '') : '분석 결과 없음'}</p>
+                  </div>
+                  {/* 요약 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">요약</h3>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.summary?.trim() ? analysis.summary : '요약 생성 실패'}</p>
+                  </div>
+                  {/* 개념 설명 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.concept_explanation?.trim() ? analysis.concept_explanation.replace(/^개념 설명:?\\s*/i, '') : '개념 설명 없음'}</p>
+                  </div>
+                  {/* 주요 키워드 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {analysis.main_keywords?.trim() ? analysis.main_keywords.replace(/^주요 키워드:?\\s*/i, '').split(',').filter(keyword => keyword.trim()).map((keyword, idx) => (
+                        <span key={idx} className="px-2 py-1 rounded-full text-sm bg-blue-900/30 text-blue-400">{keyword.trim()}</span>
+                      )) : <span className="text-[#bbbbbb]">키워드 없음</span>}
                     </div>
-                  )}
-                  {analysis.summary && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">요약</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.summary}</p>
-                    </div>
-                  )}
-                  {analysis.concept_explanation && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">개념 설명</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.concept_explanation.replace(/^개념 설명:?\\s*/i, '')}</p>
-                    </div>
-                  )}
-                  {analysis.main_keywords && typeof analysis.main_keywords === 'string' && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">주요 키워드</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {analysis.main_keywords.replace(/^주요 키워드:?\\s*/i, '').split(',')
-                          .filter(keyword => keyword.trim())
-                          .map((keyword, idx) => (
-                            <span key={idx} className="px-2 py-1 rounded-full text-sm bg-blue-900/30 text-blue-400">
-                              {keyword.trim()}
-                            </span>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                  {analysis.important_sentences && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
-                      <p className="text-[#bbbbbb] text-sm whitespace-pre-line">
-                        {analysis.important_sentences.replace(/^중요한 문장:?\\s*/i, '')}
-                      </p>
-                    </div>
-                  )}
-                  {analysis.image_description && analysis.image_description !== '없음' && (
-                    <div>
-                      <h3 className="font-semibold mb-1 text-white">이미지 설명</h3>
-                      <p className="text-[#bbbbbb] text-sm">{analysis.image_description}</p>
-                    </div>
-                  )}
+                  </div>
+                  {/* 중요 문장 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">중요 문장</h3>
+                    <p className="text-[#bbbbbb] text-sm whitespace-pre-line">{analysis.important_sentences?.trim() ? analysis.important_sentences.replace(/^중요한 문장:?\\s*/i, '') : '중요 문장 없음'}</p>
+                  </div>
+                  {/* 이미지 설명 */}
+                  <div>
+                    <h3 className="font-semibold mb-1 text-white">이미지 설명</h3>
+                    <p className="text-[#bbbbbb] text-sm">{analysis.image_description?.trim() ? analysis.image_description : '이미지 설명 없음'}</p>
+                  </div>
                 </div>
               ) : (
                 <p className="text-[#bbbbbb]">페이지를 선택하면 분석 결과가 표시됩니다.</p>

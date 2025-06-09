@@ -64,6 +64,7 @@ CREATE TABLE `slide_keywords` (
 -- Create questions table
 CREATE TABLE `questions` (
   `question_id` BIGINT NOT NULL AUTO_INCREMENT,
+  `number` INT NOT NULL DEFAULT 1,
   `slide_id` BIGINT NOT NULL,
   `question_type` VARCHAR(50) NOT NULL,
   `content` text NOT NULL,
@@ -144,7 +145,7 @@ CREATE TABLE `weak_keyword_logs` (
   `question_id` BIGINT NOT NULL,
   `keyword_id` BIGINT NOT NULL,
   `is_incorrect` tinyint(1) NOT NULL,
-  `occurred_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`log_id`),
   KEY `keyword_id` (`keyword_id`),
   KEY `question_id` (`question_id`),

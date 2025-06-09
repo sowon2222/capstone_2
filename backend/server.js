@@ -13,6 +13,7 @@ const { fromPath } = require('pdf2pic');
 const sharp = require('sharp');
 const problemSessionRouter = require('./problemSession');
 require('dotenv').config();
+const axios = require('axios');
 
 const app = express();
 
@@ -307,7 +308,6 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
             [materialId, slideNumber]
         );
         if (existing) {
-            // main_keywords를 배열로 변환
             const mainKeywordsArr = existing.main_keywords ? existing.main_keywords.split(',').map(k => k.trim()) : [];
             return res.json({ slide: existing, slide_id: existing.slide_id, main_keywords: mainKeywordsArr });
         }
@@ -338,7 +338,6 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
         const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
 
         // 이미지를 sharp로 리사이즈(최대 1024px) 후 파일로 저장
-        // 이미지 저장 파일명: m_<materialId>_s_<slideNumber>.png
         const customImageName = `m_${materialId}_s_${slideNumber}.png`;
         const customImagePath = path.join(path.dirname(imagePath), customImageName);
         const resizedBuffer = await sharp(fs.readFileSync(imagePath))
@@ -346,135 +345,84 @@ app.post('/archive/:lecture_id/slide/:slide_number/summary', authenticateToken, 
           .png()
           .toBuffer();
         fs.writeFileSync(customImagePath, resizedBuffer);
-        // 퍼블릭 URL 환경변수 사용 (ngrok 등)
         const publicBaseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
         const imageUrl = `${publicBaseUrl}/uploads/${customImageName}`;
 
-        // GPT 구조화 요약 (image_url만 전달)
-        const gptResult = await summarizeSlideWithGPT(text, imageUrl);
-        // gptResult: { slide_title, concept_explanation, main_keywords, important_sentences, summary, image_description }
+        // 224x224로 리사이즈 후 base64 변환
+        let imageBase64 = null;
+        if (customImagePath && fs.existsSync(customImagePath)) {
+            const resizedBuffer = await sharp(fs.readFileSync(customImagePath))
+                .resize({ width: 224, height: 224, fit: 'fill' })
+                .png()
+                .toBuffer();
+            imageBase64 = resizedBuffer.toString('base64');
+        }
+
+        // 1. RunPod 서버 요약 요청
+        const runpodUrl = process.env.RUNPOD_API_URL.replace(/\/+$/, '');
+        const runpodRes = await axios.post(`${runpodUrl}/summarize/start`, {
+            ocr_text: text,
+            image_base64: imageBase64
+        });
+        const { task_id: run_id } = runpodRes.data; // RunPod도 polling task_id 구조라고 가정
+
+        // 2-1. RunPod polling으로 결과 받기
+        let runpodResult = null;
+        for (let i = 0; i < 150; i++) { // 최대 5분 대기
+            await new Promise(r => setTimeout(r, 2000));
+            const statusRes = await axios.get(`${runpodUrl}/summarize/status/${run_id}`);
+            if (statusRes.data.status === 'completed') {
+                runpodResult = statusRes.data.result;
+                break;
+            }
+            if (statusRes.data.status === 'error') {
+                throw new Error(statusRes.data.error || 'RunPod 요약 실패');
+            }
+        }
+        if (!runpodResult) throw new Error('RunPod 요약 결과를 받지 못했습니다.');
+
+        // 3. OpenAI GPT 요약도 호출
+        const gptResult = await summarizeSlideWithGPT(text);
+
+        // 4. 결과 합치기 (필수 필드 보장)
+        const mergedResult = {
+            slide_title: runpodResult.slide_title || '분석 실패',
+            summary: runpodResult.summary || '요약 생성에 실패했습니다.',
+            image_description: runpodResult.image_description || '없습니다.',
+            main_keywords: gptResult.main_keywords || '',
+            concept_explanation: gptResult.concept_explanation || '',
+            important_sentences: gptResult.important_sentences || ''
+        };
 
         // main_keywords 처리 (문자열 → 배열)
         let mainKeywordsArr = [];
-        if (gptResult.main_keywords) {
-            mainKeywordsArr = gptResult.main_keywords.split(',').map(k => k.trim()).filter(Boolean);
-        }
-        // keywords 테이블에 저장 및 slide_keywords 연결
-        let firstKeywordId = null;
-        for (let i = 0; i < mainKeywordsArr.length; i++) {
-            const keyword = mainKeywordsArr[i];
-            // 1. keywords 테이블에 존재하는지 확인
-            const [existingKeyword] = await pool.query(
-                'SELECT keyword_id FROM keywords WHERE keyword_name = ?',
-                [keyword]
-            );
-            let keywordId;
-            if (existingKeyword) {
-                keywordId = existingKeyword.keyword_id;
-            } else {
-                const result = await pool.query(
-                    'INSERT INTO keywords (keyword_name) VALUES (?)',
-                    [keyword]
-                );
-                keywordId = result.insertId;
-            }
-            // 2. slide_keywords 테이블에 연결
-            // (slide_id는 아래에서 생성 후 연결)
-            if (i === 0) firstKeywordId = keywordId;
+        if (mergedResult.main_keywords) {
+            mainKeywordsArr = mergedResult.main_keywords.split(',').map(k => k.trim()).filter(Boolean);
         }
 
-        // DB 저장 (구조화 컬럼 포함)
-        console.log('[슬라이드 요약 생성] materialId:', materialId, 'slideNumber:', slideNumber);
-        console.log('[슬라이드 요약 생성] gptResult:', gptResult);
+        // RunPod 응답을 받은 후에 DB 저장
         const slideResult = await pool.query(
             'INSERT INTO slides (material_id, slide_number, original_text, slide_title, concept_explanation, main_keywords, important_sentences, summary, image_url, image_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [materialId, slideNumber, text, gptResult.slide_title, gptResult.concept_explanation, gptResult.main_keywords, gptResult.important_sentences, gptResult.summary, `/uploads/${customImageName}`, gptResult.image_description]
+            [materialId, slideNumber, text, mergedResult.slide_title, mergedResult.concept_explanation, mergedResult.main_keywords, mergedResult.important_sentences, mergedResult.summary, `/uploads/${customImageName}`, mergedResult.image_description]
         );
         const slideId = slideResult.insertId;
-        console.log('[슬라이드 요약 생성] slideId:', slideId);
 
-        // slide_keywords 연결 (슬라이드당 첫 번째 키워드만)
-        if (firstKeywordId) {
-            await pool.query(
-                'INSERT IGNORE INTO slide_keywords (slide_id, keyword_id) VALUES (?, ?)',
-                [slideId, firstKeywordId]
-            );
-        }
-
-        // 이미지 파일 삭제
-        //fs.unlinkSync(imagePath);
-
-        // 진도율 계산
-        const [totalSlides] = await pool.query(
-            'SELECT COUNT(DISTINCT slide_number) as total FROM slides WHERE material_id = ?',
-            [materialId]
-        );
-        const [materialInfo] = await pool.query(
-            'SELECT page FROM lecture_materials WHERE material_id = ?',
-            [materialId]
-        );
-        const totalSlidesCount = Number(totalSlides.total);
-        const totalPages = Number(materialInfo.page);
-        const progress = (totalSlidesCount / totalPages) * 100;
-
-        // 강의자료 테이블에 진도율 업데이트
-        await pool.query(
-            'UPDATE lecture_materials SET progress = ? WHERE material_id = ?',
-            [progress, materialId]
-        );
-
-        // 오늘 날짜
-        const today = new Date().toISOString().slice(0, 10);
-
-        // 오늘 이전의 누적 진도율
-        const [lastLog] = await pool.query(
-            'SELECT total_progress FROM study_progress_log WHERE user_id = ? AND material_id = ? ORDER BY study_date DESC LIMIT 1',
-            [req.user.user_id, materialId]
-        );
-        const prevProgress = lastLog ? Number(lastLog.total_progress) : 0;
-        const progressDelta = progress - prevProgress;
-
-        // 오늘 study_progress_log에 기록 (있으면 update, 없으면 insert)
-        const [existingLog] = await pool.query(
-            'SELECT * FROM study_progress_log WHERE user_id = ? AND material_id = ? AND study_date = ?',
-            [req.user.user_id, materialId, today]
-        );
-        if (existingLog) {
-            await pool.query(
-                'UPDATE study_progress_log SET progress_delta = ?, total_progress = ? WHERE log_id = ?',
-                [progressDelta, progress, existingLog.log_id]
-            );
-            console.log(`[UPDATE] study_progress_log: user_id=${req.user.user_id}, material_id=${materialId}, date=${today}, progress=${progress}`);
-        } else {
-            await pool.query(
-                'INSERT INTO study_progress_log (user_id, material_id, study_date, progress_delta, total_progress) VALUES (?, ?, ?, ?, ?)',
-                [req.user.user_id, materialId, today, progressDelta, progress]
-            );
-            console.log(`[INSERT] study_progress_log: user_id=${req.user.user_id}, material_id=${materialId}, date=${today}, progress=${progress}`);
-        }
-
-        // BigInt를 문자열로 변환
-        function replacer(key, value) {
-            return typeof value === 'bigint' ? value.toString() : value;
-        }
-
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({
+        res.json({
             slide: {
                 id: slideId.toString(),
                 slide_number: slideNumber,
                 original_text: text,
-                slide_title: gptResult.slide_title,
-                concept_explanation: gptResult.concept_explanation,
-                main_keywords: gptResult.main_keywords,
-                important_sentences: gptResult.important_sentences,
-                summary: gptResult.summary,
+                slide_title: mergedResult.slide_title,
+                concept_explanation: mergedResult.concept_explanation,
+                main_keywords: mergedResult.main_keywords,
+                important_sentences: mergedResult.important_sentences,
+                summary: mergedResult.summary,
                 image_url: `/uploads/${customImageName}`,
-                image_description: gptResult.image_description
+                image_description: mergedResult.image_description
             },
             slide_id: slideId,
             main_keywords: mainKeywordsArr
-        }, replacer));
+        });
     } catch (err) {
         console.error('슬라이드 요약 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 오류' });
@@ -813,6 +761,116 @@ app.get('/api/question/:question_id/slide-summary', authenticateToken, async (re
         console.error('슬라이드 요약 조회 오류:', err);
         res.status(500).json({ error: '슬라이드 요약 조회 오류' });
     }
+});
+
+// --- Polling-based slide summarization tasks ---
+const tasks = {}; // { [task_id]: { status, result, error, run_id } }
+let taskCounter = 0;
+
+// 1. Start summarization task (polling)
+app.post('/summarize/start', authenticateToken, async (req, res) => {
+  const { material_id, slide_number } = req.body;
+  const task_id = `task_${++taskCounter}`;
+  tasks[task_id] = { status: 'processing', result: null, error: null, run_id: null, gptResult: null, runpodResult: null };
+
+  // Start async job
+  (async () => {
+    try {
+      // 1. Prepare slide image and OCR (reuse logic from /archive/:lecture_id/slide/:slide_number/summary)
+      const pdfPath = path.join(__dirname, 'uploads', `${material_id}.pdf`);
+      const pdf2picOptions = {
+        density: 150,
+        saveFilename: 'slide',
+        savePath: './uploads',
+        format: 'png',
+        width: 1200,
+        height: 900
+      };
+      const converter = fromPath(pdfPath, pdf2picOptions);
+      const pageImage = await converter(slide_number);
+      const imagePath = pageImage.path;
+      const { data: { text } } = await Tesseract.recognize(imagePath, 'kor+eng');
+      const customImageName = `m_${material_id}_s_${slide_number}.png`;
+      const customImagePath = path.join(path.dirname(imagePath), customImageName);
+      const resizedBuffer = await sharp(fs.readFileSync(imagePath))
+        .resize({ width: 1024, height: 1024, fit: 'inside' })
+        .png()
+        .toBuffer();
+      fs.writeFileSync(customImagePath, resizedBuffer);
+      let imageBase64 = null;
+      if (customImagePath && fs.existsSync(customImagePath)) {
+        const resizedBuffer = await sharp(fs.readFileSync(customImagePath))
+          .resize({ width: 224, height: 224, fit: 'fill' })
+          .png()
+          .toBuffer();
+        imageBase64 = resizedBuffer.toString('base64');
+      }
+      // 2. 먼저 GPT 요약 호출
+      let gptResult = {};
+      try {
+        gptResult = await summarizeSlideWithGPT(text);
+      } catch (e) {
+        gptResult = {};
+      }
+      tasks[task_id].gptResult = gptResult;
+      // 3. RunPod에 요약 요청 (비동기)
+      const runpodUrl = process.env.RUNPOD_API_URL.replace(/\/+$/, '');
+      const runpodRes = await axios.post(`${runpodUrl}/summarize/start`, {
+        ocr_text: text,
+        image_base64: imageBase64
+      });
+      const { task_id: run_id } = runpodRes.data; // RunPod도 polling task_id 구조라고 가정
+      tasks[task_id].run_id = run_id;
+      // 4. RunPod polling으로 결과 받기
+      let runpodResult = null;
+      for (let i = 0; i < 150; i++) { // 최대 5분 대기
+        await new Promise(r => setTimeout(r, 2000));
+        const statusRes = await axios.get(`${runpodUrl}/summarize/status/${run_id}`);
+        if (statusRes.data.status === 'completed') {
+          runpodResult = statusRes.data.result;
+          break;
+        }
+        if (statusRes.data.status === 'error') {
+          throw new Error(statusRes.data.error || 'RunPod 요약 실패');
+        }
+      }
+      if (!runpodResult) throw new Error('RunPod 요약 결과를 받지 못했습니다.');
+      tasks[task_id].runpodResult = runpodResult;
+      // 5. 두 결과 합치기 (필수 필드 보장)
+      const mergedResult = {
+        slide_title: runpodResult.slide_title || '분석 실패',
+        summary: runpodResult.summary || '요약 생성에 실패했습니다.',
+        image_description: runpodResult.image_description || '',
+        main_keywords: gptResult.main_keywords || '',
+        concept_explanation: gptResult.concept_explanation || '',
+        important_sentences: gptResult.important_sentences || ''
+      };
+      tasks[task_id].status = 'completed';
+      tasks[task_id].result = mergedResult;
+      // DB 저장이 필요하다면 여기에 추가 (주석)
+      // await saveToDB(mergedResult);
+    } catch (err) {
+      tasks[task_id].status = 'error';
+      tasks[task_id].error = err.message;
+    }
+  })();
+
+  res.json({ task_id });
+});
+
+// 2. Poll summarization status
+app.get('/summarize/status/:task_id', authenticateToken, async (req, res) => {
+  const { task_id } = req.params;
+  const task = tasks[task_id];
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.status === 'completed') {
+    return res.json({ status: 'completed', result: task.result });
+  }
+  if (task.status === 'error') {
+    return res.json({ status: 'error', error: task.error });
+  }
+  return res.json({ status: 'processing' });
 });
 
 // 서버 시작
