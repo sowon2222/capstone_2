@@ -125,40 +125,51 @@ app.post('/api/upload', authenticateToken, upload.single('pdf'), async (req, res
 app.get('/archive/list', authenticateToken, async (req, res) => {
     const userId = req.user.user_id;
     try {
-        // [1] DB에서 자료 리스트 + scores 쿼리
-        const results = await pool.query(
-            `SELECT m.material_id, m.material_name, m.page, m.progress, m.created_at,
-                (SELECT COUNT(*) FROM questions q 
-                 JOIN slides s ON q.slide_id = s.slide_id 
-                 WHERE s.material_id = m.material_id) AS quiz_count,
-                (
-                  SELECT IFNULL(
-                    JSON_ARRAYAGG(
-                      JSON_OBJECT('round', sc.round, 'score', sc.score)
-                    ), '[]'
-                  )
-                  FROM problem_solving_scores sc
-                  WHERE sc.user_id = ? AND sc.material_id = m.material_id
-                ) AS scores
-            FROM lecture_materials m
-            WHERE m.user_id = ?
-            ORDER BY m.material_id DESC`,
-            [userId, userId]
+        // 1. 자료 리스트만 먼저 가져오기
+        const materials = await pool.query(
+            `SELECT material_id, material_name, page, progress, created_at
+             FROM lecture_materials
+             WHERE user_id = ?
+             ORDER BY material_id DESC`,
+            [userId]
         );
 
-        // [2] 쿼리 결과를 프론트에 맞게 가공 (여기에 넣으세요!)
-        const materials = results.map(mat => ({
+        // 2. 각 자료별로 quiz_count, scores 조회해서 합치기
+        for (const mat of materials) {
+            // quiz_count
+            const [quizCountRow] = await pool.query(
+                `SELECT COUNT(*) AS quiz_count
+                 FROM questions q
+                 JOIN slides s ON q.slide_id = s.slide_id
+                 WHERE s.material_id = ?`,
+                [mat.material_id]
+            );
+            mat.quiz_count = quizCountRow ? Number(quizCountRow.quiz_count) : 0;
+
+            // scores (라운드별 하나씩만)
+            const scores = await pool.query(
+                `SELECT round, score
+                 FROM problem_solving_scores
+                 WHERE user_id = ? AND material_id = ?
+                 GROUP BY round
+                 ORDER BY round`,
+                [userId, mat.material_id]
+            );
+            mat.scores = scores || [];
+        }
+
+        // 3. 프론트에 맞게 가공
+        const result = materials.map(mat => ({
             material_id: mat.material_id.toString(),
             title: mat.material_name,
             page: Number(mat.page),
             progress: Number(mat.progress),
             created_at: mat.created_at,
-            has_quiz: Number(mat.quiz_count) > 0,
-            scores: mat.scores ? JSON.parse(mat.scores) : []
+            has_quiz: mat.quiz_count > 0,
+            scores: mat.scores
         }));
 
-        // [3] 응답 반환
-        res.json({ materials });
+        res.json({ materials: result });
     } catch (err) {
         console.error('자료 리스트 조회 오류:', err);
         res.status(500).json({ error: '자료 리스트 조회 오류' });
