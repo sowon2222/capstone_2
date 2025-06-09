@@ -231,18 +231,35 @@ export default function ProblemSolving() {
       };
     });
 
-    // 세션 업데이트
-    // if (problemSession) {
-    //   allResults.forEach(result => {
-    //     updateProblemSession(result.question_id, result.is_correct);
-    //   });
-    // }
+    // 문제별로 /quiz/submit API 호출해서 DB에 저장
+    const token = localStorage.getItem('token');
+    const payload = parseJwt(token);
+    const userId = payload?.user_id;
+    for (let idx = 0; idx < problems.length; idx++) {
+      const problem = problems[idx];
+      let userAnswer = answers[idx];
+      // 객관식이면 보기 텍스트로 변환
+      if (problem.type === '객관식' && Array.isArray(problem.options)) {
+        userAnswer = problem.options[userAnswer];
+      }
+      // 항상 문자열로 변환
+      userAnswer = String(userAnswer);
 
-    const correctCount = allResults.filter(r => r.is_correct).length;
-    const score = correctCount * 10; // 10문제 기준
+      await fetch('http://localhost:8000/quiz/submit', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          question_id: problem.question_id || problem.id,
+          user_answer: userAnswer
+        })
+      });
+    }
 
     // 점수 저장
-    const token = localStorage.getItem('token');
     await fetch(`http://localhost:3000/api/problem-session/${problemSession.session_id}/score`, {
       method: 'POST',
       headers: {

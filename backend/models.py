@@ -120,6 +120,7 @@
 from database import Base, get_db, engine
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, TIMESTAMP, text, Float, Date, Enum, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
@@ -223,4 +224,4 @@ class WeakKeywordLog(Base):
     question_id = Column(BigInteger, ForeignKey("questions.question_id"), nullable=False)
     keyword_id = Column(BigInteger, ForeignKey("keywords.keyword_id"), nullable=False)
     is_incorrect = Column(Boolean, nullable=False)
-    created_at = Column(TIMESTAMP, nullable=True, server_default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(TIMESTAMP, nullable=True, default=datetime.utcnow)

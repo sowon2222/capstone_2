@@ -258,11 +258,18 @@ const ArchiveDetail = ({ archive, onBack }) => {
         {activeTab === 'questions' && (
           <div className="space-y-6">
             {(() => {
-              // question_id 기준으로 중복 제거(가장 최근 기록만 남김)
+              // question_id 기준으로 중복 제거(최신 기록만 남김)
               const uniqueAttemptsMap = new Map();
               for (const attempt of attempts) {
+                // 이미 같은 question_id가 있으면, 더 최신 attempt_date만 남김
                 if (!uniqueAttemptsMap.has(attempt.question_id)) {
                   uniqueAttemptsMap.set(attempt.question_id, attempt);
+                } else {
+                  const prev = uniqueAttemptsMap.get(attempt.question_id);
+                  // attempt_date가 더 최신인 것을 남김
+                  if (new Date(attempt.attempt_date) > new Date(prev.attempt_date)) {
+                    uniqueAttemptsMap.set(attempt.question_id, attempt);
+                  }
                 }
               }
               const uniqueAttempts = Array.from(uniqueAttemptsMap.values());
