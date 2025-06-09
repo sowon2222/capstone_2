@@ -36,6 +36,11 @@ const DocumentAnalysis = () => {
   const interruptionStartRef = useRef(null);
   const [ocrText, setOcrText] = useState('');
   const [imageBase64, setImageBase64] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [shouldLoadImage, setShouldLoadImage] = useState(false);
+  const imageRetryCount = useRef(0);
+  const maxRetries = 3;
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -351,7 +356,7 @@ const DocumentAnalysis = () => {
   const progress = Math.round((viewedPages.length / numPages) * 100);
 
   const getSlideImageUrl = (materialId, slideNumber) =>
-    `http://localhost:3000/uploads/m_${materialId}_s_${slideNumber}.png`;
+    `${process.env.REACT_APP_API_URL || 'http://localhost:3000'}/uploads/m_${materialId}_s_${slideNumber}.png`;
 
   const handleGoToArchiveDetail = () => {
     if (materialId) {
@@ -457,6 +462,41 @@ const DocumentAnalysis = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
+
+  // 페이지 변경 시 이미지 로딩 상태 초기화
+  useEffect(() => {
+    setImageLoading(false);
+    setImageError(false);
+    setShouldLoadImage(false);
+    imageRetryCount.current = 0;
+  }, [selectedPage]);
+
+  // 요약이 생성되면 이미지 로드 시작
+  useEffect(() => {
+    if (analysis && !shouldLoadImage) {
+      setShouldLoadImage(true);
+      setImageLoading(true);
+    }
+  }, [analysis]);
+
+  const handleImageLoad = () => {
+    setImageLoading(false);
+    setImageError(false);
+    imageRetryCount.current = 0;
+  };
+
+  const handleImageError = () => {
+    setImageLoading(false);
+    setImageError(true);
+    
+    if (imageRetryCount.current < maxRetries) {
+      imageRetryCount.current += 1;
+      setTimeout(() => {
+        setImageLoading(true);
+        setImageError(false);
+      }, 1000 * imageRetryCount.current);
+    }
+  };
 
   if (mode === 'list') {
     return (
@@ -610,12 +650,51 @@ const DocumentAnalysis = () => {
               <div className="mb-2 text-[#bbbbbb] text-sm">페이지 {selectedPage} / {numPages}</div>
               <div className="overflow-auto h-[calc(80vh-80px)] w-full flex justify-center hide-scrollbar">
                 {file && (
-                  <img
-                    key={selectedPage}
-                    src={`http://localhost:3000/uploads/m_${materialId}_s_${selectedPage}.png`}
-                    alt={`슬라이드 ${selectedPage} 이미지`}
-                    style={{ width: '100%', maxHeight: 500, objectFit: 'contain' }}
-                  />
+                  <>
+                    {!analysis && (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <div className="text-[#bbbbbb]">요약 생성 중...</div>
+                      </div>
+                    )}
+                    {analysis && shouldLoadImage && (
+                      <>
+                        {imageLoading && (
+                          <div className="flex flex-col items-center justify-center h-full">
+                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#346aff] mb-2"></div>
+                            <div className="text-[#bbbbbb]">이미지 로딩 중...</div>
+                          </div>
+                        )}
+                        {imageError && imageRetryCount.current >= maxRetries && (
+                          <div className="flex flex-col items-center justify-center h-full">
+                            <div className="text-[#bbbbbb] mb-2">이미지를 불러올 수 없습니다.</div>
+                            <button 
+                              onClick={() => {
+                                setImageLoading(true);
+                                setImageError(false);
+                                imageRetryCount.current = 0;
+                              }}
+                              className="px-4 py-2 bg-[#346aff] text-white rounded-lg hover:bg-[#2554b0]"
+                            >
+                              다시 시도
+                            </button>
+                          </div>
+                        )}
+                        <img
+                          key={`${materialId}_${selectedPage}_${imageRetryCount.current}`}
+                          src={getSlideImageUrl(materialId, selectedPage)}
+                          alt={`슬라이드 ${selectedPage} 이미지`}
+                          style={{ 
+                            width: '100%', 
+                            maxHeight: 500, 
+                            objectFit: 'contain',
+                            display: imageLoading || imageError ? 'none' : 'block'
+                          }}
+                          onLoad={handleImageLoad}
+                          onError={handleImageError}
+                        />
+                      </>
+                    )}
+                  </>
                 )}
               </div>
             </div>

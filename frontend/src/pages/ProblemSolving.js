@@ -467,7 +467,6 @@ export default function ProblemSolving() {
   // 문제풀이 세션 업데이트
   const updateProblemSession = async (questionId, isCorrect) => {
     if (!problemSession) return;
-    // null 값이면 요청하지 않음
     if (questionId == null || isCorrect == null) return;
     const token = localStorage.getItem('token');
     try {
@@ -557,7 +556,11 @@ export default function ProblemSolving() {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ currentRound: problemSession.current_round + 1 })
+      body: JSON.stringify({
+        questionId: 0,        // 더미 값
+        isCorrect: null,      // 더미 값
+        currentRound: problemSession.current_round + 1
+      })
     });
     // 세션 정보 다시 불러오기
     const res = await fetch(`http://localhost:3000/api/problem-session/${selectedDocument.material_id}`, {
