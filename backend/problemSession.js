@@ -1,3 +1,5 @@
+// problemSession.js (백엔드)
+
 const express = require('express');
 const router = express.Router();
 const pool = require('./db'); // db.js에서 pool만 import
