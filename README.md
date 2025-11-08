@@ -1,11 +1,11 @@
-# 📚 대학생 학습 도우미 플랫폼
+# 대학생 학습 도우미 플랫폼
 
 > **Node.js(Express) + FastAPI + React 기반**  
 > 강의자료 PDF 업로드, OCR, GPT 요약/문제 생성, 사용자 인증/문제풀이 등 통합 학습 플랫폼
 
 ---
 
-## 🗂️ 프로젝트 구조
+## 프로젝트 구조
 
 ```
 project-root/
@@ -34,7 +34,7 @@ project-root/
 
 ---
 
-## 🚀 빠른 시작
+## 빠른 시작
 
 ### 1. 저장소 클론
 ```bash
@@ -85,7 +85,7 @@ cd backend
 
 ---
 
-## 🧩 주요 기능
+## 주요 기능
 - PDF 강의자료 업로드 및 관리
 - OCR(텍스트 추출, Tesseract)
 - GPT 기반 슬라이드 요약/문제 생성
@@ -94,7 +94,22 @@ cd backend
 
 ---
 
-## 🛠️ 기술 스택
+## 실행 화면
+
+| 메인 화면 | 강의자료 요약 |
+| :-: | :-: |
+| ![메인 화면](assets/4.png) | ![강의자료 요약](assets/1.png) |
+
+| 문제 풀이 | 학습 리포트 |
+| :-: | :-: |
+| ![문제 풀이](assets/2.png) | ![학습 리포트](assets/3.png) |
+
+- 캡처 파일은 `backend/assets` 디렉터리에 보관하며 PNG 외 확장자를 사용해도 됩니다.
+- 별도 화면을 추가할 때는 동일한 경로로 이미지를 저장하고 표에 행 또는 열을 추가하세요.
+
+---
+
+## 기술 스택
 - Node.js, Express.js
 - FastAPI, Python
 - MariaDB
@@ -105,7 +120,7 @@ cd backend
 
 ---
 
-## ⚙️ 환경 변수 예시 (`.env.example`)
+## 환경 변수 예시 (`.env.example`)
 ```env
 PORT=3000
 DB_HOST=localhost
@@ -118,7 +133,7 @@ OPENAI_API_KEY=your-openai-api-key
 
 ---
 
-## 🗄️ 데이터베이스 초기화
+## 데이터베이스 초기화
 - **DB 스키마/초기화:**
   ```bash
   mysql -u root -p < backend/config/create_database.sql
@@ -127,7 +142,7 @@ OPENAI_API_KEY=your-openai-api-key
 
 ---
 
-## 📄 Tesseract OCR 설치 안내
+## Tesseract OCR 설치 안내
 
 ### 1. 설치 방법
 - **Windows:** [UB Mannheim Tesseract 설치 파일](https://github.com/UB-Mannheim/tesseract/wiki) 다운로드/설치 후 환경변수 등록
@@ -157,7 +172,7 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 
 ---
 
-## 📑 주요 API 엔드포인트 (예시)
+## 주요 API 엔드포인트 (예시)
 
 ### 인증/사용자
 - `POST /register` - 회원가입
@@ -181,7 +196,7 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 
 ---
 
-## ⚠️ 주의사항
+## 주의사항
 - `.env`, `venv/`, `node_modules/`, `uploads/` 등은 git에 올리지 마세요. `.gitignore`로 관리
 - `create_database.sql` 실행 시 기존 DB가 삭제/재생성됩니다. 운영 환경에서는 주의!
 - Tesseract 설치/경로/언어데이터는 각자 환경에 맞게 설정
@@ -189,5 +204,5 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 
 ---
 
-## 🙋‍♀️ 문의/기여
+## 문의/기여
 - 이슈/PR/질문은 언제든 환영합니다! 
