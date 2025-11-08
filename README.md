@@ -1,7 +1,7 @@
 # 대학생 학습 도우미 플랫폼
 
 > **Node.js(Express) + FastAPI + React 기반**  
-> 강의자료 PDF 업로드, OCR, GPT 요약/문제 생성, 사용자 인증/문제풀이 등 통합 학습 플랫폼
+> 강의자료 PDF 업로드, OCR, 자동 요약/문제 생성, 사용자 인증/문제풀이 등 통합 학습 플랫폼
 
 ---
 
@@ -9,7 +9,7 @@
 
 ```
 project-root/
-├── backend/           # 백엔드 (Node.js, FastAPI, DB, AI)
+├── backend/           # 백엔드 (Node.js, FastAPI, DB)
 │   ├── config/        # 설정/초기화 스크립트 (ex. create_database.sql)
 │   ├── uploads/       # 업로드 파일 (PDF 등)
 │   ├── temp_files/    # 임시 파일
@@ -88,7 +88,7 @@ cd backend
 ## 주요 기능
 - PDF 강의자료 업로드 및 관리
 - OCR(텍스트 추출, Tesseract)
-- GPT 기반 슬라이드 요약/문제 생성
+- 슬라이드 요약 및 문제 자동 생성
 - 사용자 인증/문제풀이/오답노트/약점 분석
 - 학습 진도 및 intensity 추적
 
@@ -104,8 +104,6 @@ cd backend
 | :-: | :-: |
 | ![문제 풀이](assets/2.png) | ![학습 리포트](assets/3.png) |
 
-- 캡처 파일은 `backend/assets` 디렉터리에 보관하며 PNG 외 확장자를 사용해도 됩니다.
-- 별도 화면을 추가할 때는 동일한 경로로 이미지를 저장하고 표에 행 또는 열을 추가하세요.
 
 ---
 
@@ -114,7 +112,7 @@ cd backend
 - FastAPI, Python
 - MariaDB
 - JWT 인증
-- OpenAI GPT API
+- 외부 요약/문제 생성 API
 - Tesseract OCR
 - React (프론트)
 
@@ -187,7 +185,7 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 - `POST /archive/:lecture_id/summary` - 전체 자료 요약
 
 ### 문제/학습 관리
-- `POST /quiz/generate` - 슬라이드 기반 문제 생성(GPT)
+- `POST /quiz/generate` - 슬라이드 기반 문제 자동 생성
 - `POST /quiz/submit` - 문제 제출/채점
 - `GET /quiz/wrong-notes` - 오답노트 전체 조회
 - `POST /api/study-time` - 학습 시간 기록
